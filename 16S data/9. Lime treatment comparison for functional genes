@@ -1,0 +1,146 @@
+# Read the file again because it has been reorganized
+Magge_joint_16S_metadata <- data.frame(sample_data(Magge_joint_16S))
+
+func_data_long <- gather(Magge_joint_16S_metadata, Target, measurement, bac:coma, factor_key = TRUE)
+func_data_long
+
+
+func_data_long <- func_data_long[ -c(1:5, 7, 11:42) ]
+func_data_long
+func_data_long <- func_data_long %>% mutate_at(c('measurement'), as.numeric)
+
+library(extrafont)
+library(grDevices)
+windowsFonts(Time = windowsFont("Times"))
+
+library(ggpubr)
+
+Denmark_order <- c('Control', '4 t/ha lime', '8 t/ha lime', '12 t/ha lime') 
+func_data_long_De <- func_data_long
+
+func_data_long_De$Treatment = factor(func_data_long_De$Treatment, levels = c('Control', '4 t/ha lime', '8 t/ha lime', '12 t/ha lime'))
+
+DE_comparisons <- list(c('Control', '4 t/ha lime'), c('Control', '8 t/ha lime'), c('Control', '12 t/ha lime'))
+
+
+# Denmark results
+ggplot(subset(func_data_long_De, Country %in% c("Denmark")), aes(x = Treatment, y = measurement))+ 
+  stat_compare_means(method = "kruskal.test", size = 3, aes(group = Treatment), label.x.npc = "left", vjust = -9) +
+  geom_boxplot() +
+  facet_wrap(.~Target, drop = TRUE, scales = "free_y")+
+  theme(text = element_text(family = "Times"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 8, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 8),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  ggtitle("Denmark") +
+  stat_compare_means(method = "t.test" , comparisons = DE_comparisons, size = 3) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.4)))
+
+
+Ireland_order <- c('Control', 'Lime (2011, 2013)', 'Lime (2013)') 
+func_data_long_IR <- func_data_long
+
+func_data_long_IR$Treatment = factor(func_data_long_IR$Treatment, levels = c('Control', 'Lime (2011, 2013)', 'Lime (2013)'))
+func_data_long_IR <- func_data_long_IR %>% 
+  drop_na(c('Treatment'))
+
+IR_comparisons <- list(c('Control', 'Lime (2011, 2013)'), c('Control', 'Lime (2013)'))
+
+# Ireland results
+ggplot(func_data_long_IR, aes(x = Treatment, y = measurement))+ 
+  stat_compare_means(method = "kruskal.test", size = 3, aes(group = Treatment), label.x.npc = "left", vjust = -9) +
+  geom_boxplot()+
+  facet_wrap(.~Target, drop = TRUE, scales = "free_y")+
+  theme(text = element_text(family = "Times"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 8, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 8),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  ggtitle("Ireland")+
+  stat_compare_means(method = "t.test" , comparisons = IR_comparisons, size = 3) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.4)))
+
+
+# Norway results
+NO_comparisons <- list(c('Control', 'Dolomite'), c('Control', 'Larvikite'), c('Control', 'Marble'), c('Control', 'Norite'), c('Control', 'Olivine'))
+
+
+ggplot(subset(func_data_long, Country %in% c("Norway")), aes(x=Treatment, y=measurement)) + 
+  geom_boxplot()+
+  facet_wrap(.~Target, drop = TRUE, scales = "free_y")+
+  theme(text = element_text(family = "Times"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 8, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 8),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  stat_compare_means(method = "kruskal.test", size = 3, label.x.npc = "left", vjust = -9)+
+  ggtitle("Norway")+
+  stat_compare_means(method = "t.test" , size = 3, comparisons = NO_comparisons) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.4)))
+
+
+SWLH_comparisons <- list(c('Control', 'Mixed lime'), c('Control', 'Slaked lime'), c('Control', 'Tunnel kiln slag'))
+
+# Sweden_LH results
+ggplot(subset(func_data_long, Country %in% c("Sweden_LH")), aes(x=Treatment, y=measurement)) + 
+  geom_boxplot()+
+  facet_wrap(.~Target, drop = TRUE, scales = "free_y")+
+  theme(text = element_text(family = "Times"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12, face="bold"),
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 8, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 8),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  stat_compare_means(method = "kruskal.test", size = 3, label.x.npc = "left", vjust = -9)+
+  ggtitle("Sweden_LH")+
+  stat_compare_means(method = "t.test", size = 3, comparisons = SWLH_comparisons) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.4)))
+
+SWB_comparisons <- list( c('Control', '10 ton/ha lime'), c('Control', '20 ton /ha lime'))
+
+
+SwedenB_order <- c('Control', '10 ton/ha lime', '20 ton /ha lime') 
+func_data_long_SwB <- func_data_long
+
+func_data_long_SwB$Treatment = factor(func_data_long_SwB$Treatment, levels=c('Control', '10 ton/ha lime', '20 ton /ha lime'))
+func_data_long_SwB<-func_data_long_SwB %>% 
+  drop_na(c('Treatment'))
+
+# Sweden_B results
+ggplot(func_data_long_SwB, aes(x=Treatment, y=measurement)) + 
+  geom_boxplot()+
+  facet_wrap(.~Target, drop = TRUE, scales = "free_y")+
+  theme(text = element_text(family = "Times"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12, face="bold"),
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 8, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 8),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  stat_compare_means(method = "kruskal.test", size = 3, label.x.npc = "left", vjust = -9)+
+  ggtitle("Sweden_B")+
+  stat_compare_means(method = "t.test", size = 3, comparisons = SWB_comparisons) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.4)))
