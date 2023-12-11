@@ -1,0 +1,47 @@
+library(plyr)
+library(scales)
+
+# Clean graph and cluster by country
+
+library(dplyr)
+library(microViz)
+library(fantaxtic)
+library(speedyseq)
+library(phylosmith)
+
+Magge_joint_16S_rare <- merge_treatments(Magge_joint_16S_rare, c("Country", "Treatment"))
+
+MJ16SR_clean <- name_na_taxa(Magge_joint_16S_rare, na_label = "Unidentified <tax> (<rank>)")
+
+MJ16SR_clean2 <- MJ16SR_clean %>%
+  ps_select(Country, Treatment, Country_Treatment, Soil_pH) %>% # avoids lots of phyloseq::merge_samples warnings
+  merge_samples2(group = "Country_Treatment", funs = list()) %>%
+  tax_glom(taxrank = "Phylum")
+
+MJ16SR_clean2 %>%
+  tax_filter(
+    tax_level = "Phylum", min_prevalence = 0.001,
+    prev_detection_threshold = 100
+  ) %>%
+  ps_mutate(
+    Treatment = factor(Treatment, levels = c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime','Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)','Dolomite', 'Larvikite', 'Marble','Norite','Olivine','10 ton/ha lime', '20 ton /ha lime','Slaked lime', 'Tunnel kiln slag', 'Mixed lime'))) %>%  
+  ps_mutate(
+    Country = factor(Country, levels = c('Denmark', 'Ireland', 'Finland', 'Norway', 'New_Zealand', 'France_LQ', 'Sweden_B', 'France_TX', 'Sweden_LH'))) %>%  
+  comp_barplot(
+    tax_level = "Phylum", n_taxa = 10,
+    bar_outline_colour = NA,
+    bar_width = 0.7,
+    taxon_renamer = toupper,
+    facet_by = "Country",
+    label = "Treatment",
+    x = "Treatment"
+    ) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title =element_text(size = 14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 10, vjust = 1, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())
