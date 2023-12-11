@@ -1,0 +1,219 @@
+#no hits after p adjusted so used just p value
+Magge_joint_ITS_rare_DE_df<-Magge_joint_ITS_rare_DE %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+#how does this community look?
+d<- ggplot(Magge_joint_ITS_rare_DE_df,aes(x=Treatment,y=Abundance,fill=Phylum))+ 
+  geom_bar(stat="identity",position="fill") +
+  scale_y_continuous()+
+  ylab("Relative Abundance")
+d
+
+library(rstatix)
+# do tests
+KW_taxa_ITS_DE<-Magge_joint_ITS_rare_DE_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Denmark")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_ITS_DE<-Magge_joint_ITS_rare_DE_df %>% 
+  filter(OTU %in% KW_taxa_ITS_DE$OTU) 
+
+
+only_sig_taxa_ITS_DE$Treatment = factor(only_sig_taxa_ITS_DE$Treatment, levels=c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime'))
+
+# plot
+DE_sig_tax_plot_ITS<-ggplot(only_sig_taxa_ITS_DE, aes(x=Treatment, y=Abundance, fill=Phylum)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ggtitle("Denmark")
+
+DE_sig_tax_plot_ITS
+
+
+
+#Ireland
+#no hits after p adjusted so used just p value
+Magge_joint_ITS_rare_IR_df<-Magge_joint_ITS_rare_IR %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_ITS_IR<-Magge_joint_ITS_rare_IR_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Ireland")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_ITS_IR<-Magge_joint_ITS_rare_IR_df %>% 
+  filter(OTU %in% KW_taxa_ITS_IR$OTU) 
+
+
+only_sig_taxa_ITS_IR$Treatment = factor(only_sig_taxa_ITS_IR$Treatment, levels = c('Control','Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)'))
+
+# plot
+IR_sig_tax_plot_ITS<-ggplot(only_sig_taxa_ITS_IR, aes(x=Treatment, y=Abundance, fill=Phylum)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ggtitle("Ireland")
+
+IR_sig_tax_plot_ITS
+
+
+
+#Sweden LH
+#no hits after p adjusted so used just p value
+Magge_joint_ITS_rare_SWLH_df<-Magge_joint_ITS_rare_SWLH %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_ITS_SWLH<-Magge_joint_ITS_rare_SWLH_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Sweden_LH")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_ITS_SWLH<-Magge_joint_ITS_rare_SWLH_df %>% 
+  filter(OTU %in% KW_taxa_ITS_SWLH$OTU) 
+
+
+only_sig_taxa_ITS_SWLH$Treatment = factor(only_sig_taxa_ITS_SWLH$Treatment, levels=c('Control','Mixed lime', 'Slaked lime', 'Tunnel kiln slag'))
+
+# plot
+SWLH_sig_tax_plot_ITS<-ggplot(only_sig_taxa_ITS_SWLH, aes(x=Treatment, y=Abundance, fill=Phylum, group=Treatment)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = 'Control')+ggtitle("Sweden LH")
+
+SWLH_sig_tax_plot_ITS
+
+
+#no hits after p adjusted so used just p value
+Magge_joint_ITS_rare_SWB_df<-Magge_joint_ITS_rare_SWB %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_ITS_SWB<-Magge_joint_ITS_rare_SWB_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Sweden_B")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_ITS_SWB<-Magge_joint_ITS_rare_SWB_df %>% 
+  filter(OTU %in% KW_taxa_ITS_SWB$OTU) 
+
+
+only_sig_taxa_ITS_SWB$Treatment = factor(only_sig_taxa_ITS_SWB$Treatment, levels=c('Control','10 ton/ha lime', '20 ton /ha lime'))
+
+# plot
+SWB_sig_tax_plot_ITS<-ggplot(only_sig_taxa_ITS_SWB, aes(x=Treatment, y=Abundance, fill=Phylum, group=Treatment)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = 'Control')+ggtitle("Sweden LH")
+
+SWB_sig_tax_plot_ITS
+
+
+#no hits after p adjusted so used just p value
+Magge_joint_ITS_rare_NO_df<-Magge_joint_ITS_rare_NO %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_ITS_NO<-Magge_joint_ITS_rare_NO_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Norway")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_ITS_NO<-Magge_joint_ITS_rare_NO_df %>% 
+  filter(OTU %in% KW_taxa_ITS_NO$OTU) 
+
+
+only_sig_taxa_ITS_NO$Treatment = factor(only_sig_taxa_ITS_NO$Treatment, levels=c('Control','Dolomite', 'Larvikite', 'Marble','Norite','Olivine'))
+
+# plot
+NO_sig_tax_plot_ITS<-ggplot(only_sig_taxa_ITS_NO, aes(x=Treatment, y=Abundance, fill=Phylum, group=Treatment)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = 'Control')+ggtitle("Norway")
+
+NO_sig_tax_plot_ITS
+
+
+
+
+# Combined table for taxa
+KW_taxa_ITS_all <- bind_rows(KW_taxa_ITS_DE, KW_taxa_ITS_IR, KW_taxa_ITS_SWB, KW_taxa_ITS_SWLH,KW_taxa_ITS_NO)
+KW_taxa_ITS_all <- KW_taxa_ITS_all %>%
+  select(-.y., -n, -df) %>%
+  arrange(desc(p))
+
+KW_taxa_ITS_all
