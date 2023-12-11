@@ -2,8 +2,6 @@ library("phyloseq")
 
 Magge_joint_16S <- readRDS("path/MAGGE_new_16S_physeq.rds")
 
-sample_data(Magge_joint_16S)$Country_code <- substr(sample_data(Magge_joint_16S)$Country, 1, 2)
-
 sample_data(Magge_joint_16S)$Average_yearly_rainfall = gsub("na", "531.93", sample_data(Magge_joint_16S)$Average_yearly_rainfall)
 
 sample_data(Magge_joint_16S)$Average_yearly_rainfall <- as.numeric(sample_data(Magge_joint_16S)$Average_yearly_rainfall)
@@ -22,3 +20,15 @@ Magge_joint_16S <- Magge_joint_16S %>%
   ps_mutate(Treatment = str_replace_all(Treatment, replacement_string))
 
 Magge_joint_16S_metadata <- data.frame(sample_data(Magge_joint_16S))
+Magge_joint_16S_metadata <- data.frame(sample_data(Magge_joint_16S))
+Magge_joint_16S_metadata <- Magge_joint_16S_metadata %>%
+  mutate(Country_code = Country) %>%
+  mutate(Country_code = str_replace(Country_code, "France_LQ", "FR1")) %>%
+  mutate(Country_code = str_replace(Country_code, "France_TX", "FR2")) %>%
+  mutate(Country_code = str_replace(Country_code, "Denmark", "DK")) %>%
+  mutate(Country_code = str_replace(Country_code, "Finland", "FI")) %>%
+  mutate(Country_code = str_replace(Country_code, "Ireland", "IE")) %>%
+  mutate(Country_code = str_replace(Country_code, "New_Zealand", "NZ")) %>%
+  mutate(Country_code = str_replace(Country_code, "Norway", "NO")) %>%
+  mutate(Country_code = str_replace(Country_code, "Sweden_B", "SE1")) %>%
+  mutate(Country_code = str_replace(Country_code, "Sweden_LH", "SE2"))
