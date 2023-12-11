@@ -1,0 +1,89 @@
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+NMDS_ITS.ord <- ordinate(Magge_joint_ITS_rare, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+NMDS_ITS.ord
+
+library(vegan)
+library(grid)
+
+stressplot(NMDS_ITS.ord)
+
+# Create label for stress value
+Stress_val = grobTree(textGrob("Stress = 0.17", x = 0.05,  y = 0.95, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+library(ggrepel)
+library(wacolors)
+
+options(ggrepel.max.overlaps = Inf)
+
+
+Magge_ITS_NMDS <- plot_ordination(Magge_joint_ITS_rare, NMDS_ITS.ord, type = "samples",color="Soil_pH")+
+  geom_text_repel(aes(label = Magge_joint_ITS_metadata$Country_code)) + 
+  scale_color_wa_c(wacolors$vantage, reverse=TRUE)+
+  geom_point(size = 1) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size =14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size=12), 
+        axis.text.y = element_text(colour = "black", size=12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())+
+  labs(color = "Soil pH")+
+  annotation_custom(Stress_val)+
+  theme_bw(base_size=12)
+
+
+
+Magge_ITS_NMDS
+
+ggsave("C:/Users/bogda/Documents/PhD/MAGGE/Figs/Fig1d_NMDS_ITS.pdf",width=7,height=5,units ="in", device="pdf")
+
+# Stats by Country
+# ANOSIM
+Country_group = get_variable(Magge_joint_ITS_rare, "Country")
+Country_ano = anosim(phyloseq::distance(Magge_joint_ITS_rare, "bray"), Country_group)
+Country_ano$signif
+Country_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Magge_joint_ITS_rare), "data.frame")
+# Calculate your Bray distance matrix
+Country_ado = phyloseq::distance(Magge_joint_ITS_rare, "bray")
+# Perform your ADONIS test
+Country_ado_stats <- adonis2(Country_ado ~ Country, df_ado)
+
+# Check results
+Country_ado_stats
+
+
+# Stats by pH
+# ANOSIM
+pH_group = get_variable(Magge_joint_ITS_rare, "Soil_pH")
+pH_ano = anosim(phyloseq::distance(Magge_joint_ITS_rare, "bray"), pH_group)
+pH_ano$signif
+pH_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Magge_joint_ITS_rare), "data.frame")
+# Calculate your Bray distance matrix
+pH_ado = phyloseq::distance(Magge_joint_ITS_rare, "bray")
+# Perform your ADONIS test
+pH_ado_stats <- adonis2(pH_ado ~ Soil_pH, df_ado)
+
+# Check results
+pH_ado_stats
+
+# Mantel correlation
+### pH matrix
+ph.dist <- dist(df_ado$Soil_pH, method = "euclidean")
+dist.matrix <- as.matrix(ph.dist)
+
+### Mantel tests
+mantel(pH_ado, ph.dist, method = "spearman")
