@@ -1,0 +1,24 @@
+library("phyloseq")
+
+Magge_joint_16S <- readRDS("path/MAGGE_new_16S_physeq.rds")
+
+sample_data(Magge_joint_16S)$Country_code <- substr(sample_data(Magge_joint_16S)$Country, 1, 2)
+
+sample_data(Magge_joint_16S)$Average_yearly_rainfall = gsub("na", "531.93", sample_data(Magge_joint_16S)$Average_yearly_rainfall)
+
+sample_data(Magge_joint_16S)$Average_yearly_rainfall <- as.numeric(sample_data(Magge_joint_16S)$Average_yearly_rainfall)
+
+library(dplyr)
+library(stringr)
+library(microViz)
+
+# Removing numbers from strings
+replacement_string <- c("e1" = "e", "e2" = "e", "e3" = "e", "e4" = "e",
+                        "l1" = "l", "l2" = "l", "l3" = "l", "l4" = "l",
+                        "finely ground limestone" = "lime", "No lime" = "Control",
+                        "0 t/ha lime" = "Control")
+
+Magge_joint_16S <- Magge_joint_16S %>%
+  ps_mutate(Treatment = str_replace_all(Treatment, replacement_string))
+
+Magge_joint_16S_metadata <- data.frame(sample_data(Magge_joint_16S))
