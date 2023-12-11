@@ -1,0 +1,58 @@
+# Create PCA including all soil properties
+
+library("tidyverse")
+
+# Reorganize data and convert to numerical
+
+Magge_joint_16S_metadata <- Magge_joint_16S_metadata %>% relocate(c(Treatment, Soil_type, Soil_depth, Cumulative_N20, Cumulative_N2, N2O_ratio, nirk.s:nos.nir), .before = Note)
+
+# Replace NA with missing value 
+Magge_joint_16S_metadata["Average_yearly_rainfall"][is.na(Magge_joint_16S_metadata["Average_yearly_rainfall"])] <- 531.93
+
+Magge_joint_16S_metadata <- Magge_joint_16S_metadata %>% mutate_at(c(23:51), as.numeric)
+
+
+# PCA plot
+
+chem.pca <- prcomp(Magge_joint_16S_metadata[,c(23:42)], scale = TRUE)
+summary(chem.pca)
+var_explained <- chem.pca$sdev^2/sum(chem.pca$sdev^2)
+var_explained[1:5]
+
+library(ggfortify)
+autoplot(chem.pca, data = Magge_joint_16S_metadata, color="Soil_pH",loadings = TRUE, loadings.colour = 'red',
+         loadings.label = TRUE, loadings.label.size = 3,loadings.label.repel=T,box.padding = 1)+ 
+  geom_text_repel(aes(label = Country_code, color = Soil_pH)) + 
+  geom_point(size=1, aes(color = Soil_pH))+
+  scale_color_wa_c(wacolors$vantage, reverse=TRUE)+
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14, face = "bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size = 12), 
+        axis.text.y = element_text(colour = "black", size = 12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  labs(color = "Soil pH") + theme_bw(base_size = 12)
+
+# Add table for factor loading regressions
+chem.pca.correlation <- data.frame(chem.pca$rotation[,1:2])
+chem.pca.correlation
+
+# Replot colored by rain
+autoplot(chem.pca, data = Magge_joint_16S_metadata, color="Average_yearly_rainfall",loadings = TRUE, loadings.colour = 'red',
+         loadings.label = TRUE, loadings.label.size = 3,loadings.label.repel=T,box.padding = 1)+ 
+  geom_text_repel(aes(label = Country_code, color = Average_yearly_rainfall)) + 
+  geom_point(size=1, aes(color = Average_yearly_rainfall)) +
+  scale_color_wa_c(wacolors$vantage, reverse = TRUE) +
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14, face = "bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size = 12), 
+        axis.text.y = element_text(colour = "black", size = 12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  labs(color = "Average yearly rainfall") + theme_bw(base_size = 12)
