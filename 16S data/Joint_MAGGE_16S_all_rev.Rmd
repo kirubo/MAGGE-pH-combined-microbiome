@@ -1,0 +1,1987 @@
+---
+title: "Joint paper MAGGE-pH 16S"
+author: "Sergio"
+date: "6/24/2023"
+output: html_document
+---
+  
+Data analysis for joint paper combining functional, 16S and chemical data. 
+
+```{r global_options, echo=FALSE, results='hide'}
+library(knitr)
+knitr::opts_chunk$set(fig.width = 12, fig.height = 8, fig.align = 'center', results = 'hide', echo = FALSE, warning = FALSE, message = FALSE, cache = FALSE)
+```
+
+
+```{r load data}
+
+library("phyloseq")
+
+Magge_joint_16S <- readRDS("C:/Users/bogda/Documents/PhD/MAGGE/MAGGE_new_16S_physeq.rds")
+#
+#/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/MAGGE_new_16S_physeq.rds
+sample_data(Magge_joint_16S)$Country_code <- substr(sample_data(Magge_joint_16S)$Country, 1, 2)
+
+sample_data(Magge_joint_16S)$Average_yearly_rainfall = gsub("na", "531.93", sample_data(Magge_joint_16S)$Average_yearly_rainfall)
+
+sample_data(Magge_joint_16S)$Average_yearly_rainfall <- as.numeric(sample_data(Magge_joint_16S)$Average_yearly_rainfall)
+
+
+library(dplyr)
+library(stringr)
+library(microViz)
+
+
+# Removing numbers from strings
+replacement_string <- c("e1" = "e", "e2" = "e", "e3" = "e", "e4" = "e",
+                        "l1" = "l", "l2" = "l", "l3" = "l", "l4" = "l",
+                        "finely ground limestone" = "lime", "No lime" = "Control",
+                        "0 t/ha lime" = "Control")
+
+Magge_joint_16S <- Magge_joint_16S %>%
+  ps_mutate(Treatment = str_replace_all(Treatment, replacement_string))
+
+Magge_joint_16S_metadata <- data.frame(sample_data(Magge_joint_16S))
+
+
+
+```
+
+Rarefaction curves to  determine subsampling level. 17000 reads chosen. All samples used for analysis. Data was then subsampled to only use control sites (no pH treatment/liming)
+
+```{r rarefaction}
+
+# Remove any samples with less than 100 sequences
+pruned <- prune_samples(sample_sums(Magge_joint_16S) >= 100, Magge_joint_16S)
+pruned
+
+library(ggplot2)
+library(ranacapa)
+
+# Calculate rarefaction curves, then plot and color by subsite
+p <- ggrare(pruned, step = 1000, color = "Country", se =
+              FALSE,parallel = TRUE)+
+  scale_y_log10() +
+  scale_x_continuous(limits = c(1, 170000))
+p
+
+
+p + facet_wrap(~Country)
+
+# Rarefy at 17k
+
+Magge_joint_16S_rare <- rarefy_even_depth(Magge_joint_16S, 17000, rngseed=TRUE)
+```
+
+NMDS ordinations based on 16s data
+ANOSIM and ADONIS results shown below done by Country and then pH, with an additional Mantel test for pH at the end.
+
+```{r Compare beta diversity pH, results='markup'}
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+NMDS_16S.ord <- ordinate(Magge_joint_16S_rare, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+NMDS_16S.ord
+
+library(vegan)
+library(grid)
+
+stressplot(NMDS_16S.ord)
+
+# Create label for stress value
+Stress_val = grobTree(textGrob("Stress = 0.16", x = 0.05,  y = 0.95, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+library(ggrepel)
+library(wacolors)
+
+options(ggrepel.max.overlaps = Inf)
+
+
+Magge_16S_NMDS <- plot_ordination(Magge_joint_16S_rare, NMDS_16S.ord, type = "samples",color="Soil_pH")+
+  geom_text_repel(aes(label = Country_code)) + 
+  scale_color_wa_c(wacolors$vantage, reverse=TRUE)+
+  geom_point(size = 1) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size =14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size=12), 
+        axis.text.y = element_text(colour = "black", size=12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())+
+  labs(color = "Soil pH")+
+  annotation_custom(Stress_val)+
+  theme_bw(base_size=12)
+
+
+
+Magge_16S_NMDS
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/Fig1c_NMDS_16S.pdf",width=7,height=5,units ="in", device="pdf")
+#ggsave("C:/Users/bogda/Documents/PhD/MAGGE/Figs/Fig1c_NMDS_16S.pdf",width=7,height=5,units ="in", device="pdf")
+
+# Stats by Country
+# ANOSIM
+Country_group = get_variable(Magge_joint_16S_rare, "Country")
+Country_ano = anosim(phyloseq::distance(Magge_joint_16S_rare, "bray"), Country_group)
+Country_ano$signif
+Country_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Magge_joint_16S_rare), "data.frame")
+# Calculate your Bray distance matrix
+Country_ado = phyloseq::distance(Magge_joint_16S_rare, "bray")
+# Perform your ADONIS test
+Country_ado_stats <- adonis2(Country_ado ~ Country, df_ado)
+
+# Check results
+Country_ado_stats
+
+
+# Stats by pH
+# ANOSIM
+pH_group = get_variable(Magge_joint_16S_rare, "Soil_pH")
+pH_ano = anosim(phyloseq::distance(Magge_joint_16S_rare, "bray"), pH_group)
+pH_ano$signif
+pH_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Magge_joint_16S_rare), "data.frame")
+# Calculate your Bray distance matrix
+pH_ado = phyloseq::distance(Magge_joint_16S_rare, "bray")
+# Perform your ADONIS test
+pH_ado_stats <- adonis2(pH_ado ~ Soil_pH, df_ado)
+
+# Check results
+pH_ado_stats
+
+# Mantel correlation
+### pH matrix
+ph.dist <- dist(df_ado$Soil_pH, method = "euclidean")
+dist.matrix <- as.matrix(ph.dist)
+
+### Mantel tests
+mantel(pH_ado, ph.dist, method = "spearman")
+
+```
+
+
+NMDS color based on rain
+
+```{r NMDS color based on rain, results='markup'}
+
+Magge_16S_NMDS_rain <- plot_ordination(Magge_joint_16S_rare, NMDS_16S.ord, type = "samples",color="Average_yearly_rainfall")+
+  geom_text_repel(aes(label = Country_code)) + 
+  scale_color_wa_c(wacolors$vantage, reverse=TRUE)+
+  geom_point(size = 1) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size =14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size=12), 
+        axis.text.y = element_text(colour = "black", size=12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())+
+  labs(color = "Average yearly rainfall")+
+  annotation_custom(Stress_val)+
+  theme_bw(base_size=12)
+
+
+
+Magge_16S_NMDS_rain
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/FigX_NMDS_rain_16S.pdf",width=8,height=5,units ="in", device="pdf")
+
+#ggsave("C:/Users/bogda/Documents/PhD/MAGGE/Figs/FigX_NMDS_rain_16S.pdf",width=8,height=5,units ="in", device="pdf")
+
+# Stats by rain
+# ANOSIM
+rain_group = get_variable(Magge_joint_16S_rare, "Average_yearly_rainfall")
+rain_ano = anosim(phyloseq::distance(Magge_joint_16S_rare, "bray"), rain_group)
+rain_ano$signif
+rain_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Magge_joint_16S_rare), "data.frame")
+# Calculate your Bray distance matrix
+rain_ado = phyloseq::distance(Magge_joint_16S_rare, "bray")
+# Perform your ADONIS test
+rain_ado_stats <- adonis2(rain_ado ~ Average_yearly_rainfall, df_ado)
+
+# Check results
+rain_ado_stats
+
+# Mantel correlation
+### Rain matrix
+rain.dist <- dist(df_ado$Average_yearly_rainfall, method = "euclidean")
+dist.matrix <- as.matrix(rain.dist)
+
+### Mantel tests
+mantel(rain_ado, rain.dist, method = "spearman")
+```
+
+PCA analysis based on chemical data
+
+```{r chem PCA, results='markup'}
+# Create PCA including all soil properties
+
+library("tidyverse")
+
+# Reorganize data and convert to numerical
+
+Magge_joint_16S_metadata <- Magge_joint_16S_metadata %>% relocate(c(Treatment, Soil_type, Soil_depth, Cumulative_N20, Cumulative_N2, N2O_ratio, nirk.s:nos.nir), .before = Note)
+
+# Replace NA with missing value 
+Magge_joint_16S_metadata["Average_yearly_rainfall"][is.na(Magge_joint_16S_metadata["Average_yearly_rainfall"])] <- 531.93
+
+Magge_joint_16S_metadata <- Magge_joint_16S_metadata %>% mutate_at(c(23:51), as.numeric)
+
+
+# PCA plot
+
+chem.pca <- prcomp(Magge_joint_16S_metadata[,c(23:42)], scale = TRUE)
+summary(chem.pca)
+var_explained <- chem.pca$sdev^2/sum(chem.pca$sdev^2)
+var_explained[1:5]
+
+library(ggfortify)
+autoplot(chem.pca, data = Magge_joint_16S_metadata, color="Soil_pH",loadings = TRUE, loadings.colour = 'red',
+         loadings.label = TRUE, loadings.label.size = 3,loadings.label.repel=T,box.padding = 1)+ 
+  geom_text_repel(aes(label = Country_code, color = Soil_pH)) + 
+  geom_point(size=1, aes(color = Soil_pH))+
+  scale_color_wa_c(wacolors$vantage, reverse=TRUE)+
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14, face = "bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size = 12), 
+        axis.text.y = element_text(colour = "black", size = 12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  labs(color = "Soil pH") + theme_bw(base_size = 12)
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/Fig1a_NMDS_16S.pdf",width=7,height=5,units ="in", device="pdf")
+
+# Add table for factor loading regressions
+chem.pca.correlation <- data.frame(chem.pca$rotation[,1:2])
+chem.pca.correlation
+
+# Replot colored by rain
+autoplot(chem.pca, data = Magge_joint_16S_metadata, color="Average_yearly_rainfall",loadings = TRUE, loadings.colour = 'red',
+         loadings.label = TRUE, loadings.label.size = 3,loadings.label.repel=T,box.padding = 1)+ 
+  geom_text_repel(aes(label = Country_code, color = Average_yearly_rainfall)) + 
+  geom_point(size=1, aes(color = Average_yearly_rainfall)) +
+  scale_color_wa_c(wacolors$vantage, reverse = TRUE) +
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14, face = "bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size = 12), 
+        axis.text.y = element_text(colour = "black", size = 12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  labs(color = "Average yearly rainfall") + theme_bw(base_size = 12)
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/FigX_PCA_rain_16S.pdf",width=8,height=5,units ="in", device="pdf")
+
+
+```
+
+
+PCA analysis based on qPCR data
+Notice the New Zealand outlier skewing the plot. Seems very strange so should we remove?
+
+```{r Func PCA, results='markup'}
+
+
+# PCA plot
+
+Func.pca <- prcomp(Magge_joint_16S_metadata[,c(43:51)], scale = TRUE)
+summary(Func.pca)
+var_explained <- Func.pca$sdev^2/sum(Func.pca$sdev^2)
+var_explained[1:5]
+
+autoplot(Func.pca, data = Magge_joint_16S_metadata, color="Soil_pH",loadings = TRUE, loadings.colour = 'red',
+         loadings.label = TRUE, loadings.label.size = 3,loadings.label.repel = T,box.padding = 1)+ 
+  geom_text_repel(aes(label = Country_code, color = Soil_pH)) + 
+  geom_point(size = 1, aes(color = Soil_pH))+
+  scale_color_wa_c(wacolors$vantage, reverse = TRUE) +
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size=12), 
+        axis.text.y = element_text(colour = "black", size=12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  labs(color = "Soil pH") + theme_bw(base_size=12)
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/Figb_PCA_16S.pdf",width=7,height=5,units ="in", device="pdf")
+
+# Add table for factor loading regressions
+Func.pca.correlation<-data.frame(Func.pca$rotation[,1:2])
+Func.pca.correlation
+
+# Replot and color by rain
+autoplot(Func.pca, data = Magge_joint_16S_metadata, color="Average_yearly_rainfall",loadings = TRUE, loadings.colour = 'red',
+         loadings.label = TRUE, loadings.label.size = 3,loadings.label.repel=T,box.padding = 1) + 
+  geom_text_repel(aes(label = Country_code, color = Average_yearly_rainfall)) + 
+  geom_point(size = 1, aes(color = Average_yearly_rainfall))+
+  scale_color_wa_c(wacolors$vantage, reverse = TRUE)+
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size=12), 
+        axis.text.y = element_text(colour = "black", size=12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())+
+  labs(color = "Average yearly rainfall") + theme_bw(base_size=12)
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/FigX_PCA_func_16S.pdf",width=8,height=5,units ="in", device="pdf")
+```
+
+Stacked bar plot based on phylum (draft and clean version)
+
+```{r stack bar phylum}
+
+library(plyr)
+library(scales)
+
+# Clean graph and cluster by country
+
+library(dplyr)
+library(microViz)
+library(fantaxtic)
+library(speedyseq)
+library(phylosmith)
+
+Magge_joint_16S_rare <- merge_treatments(Magge_joint_16S_rare, c("Country", "Treatment"))
+
+MJ16SR_clean <- name_na_taxa(Magge_joint_16S_rare, na_label = "Unidentified <tax> (<rank>)")
+
+MJ16SR_clean2 <- MJ16SR_clean %>%
+  ps_select(Country, Treatment, Country_Treatment, Soil_pH) %>% # avoids lots of phyloseq::merge_samples warnings
+  merge_samples2(group = "Country_Treatment", funs = list()) %>%
+  tax_glom(taxrank = "Phylum")
+
+MJ16SR_clean2 %>%
+  tax_filter(
+    tax_level = "Phylum", min_prevalence = 0.001,
+    prev_detection_threshold = 100
+  ) %>%
+  ps_mutate(
+    Treatment = factor(Treatment, levels = c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime','Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)','Dolomite', 'Larvikite', 'Marble','Norite','Olivine','10 ton/ha lime', '20 ton /ha lime','Slaked lime', 'Tunnel kiln slag', 'Mixed lime'))) %>%  
+  ps_mutate(
+    Country = factor(Country, levels = c('Denmark', 'Ireland', 'Finland', 'Norway', 'New_Zealand', 'France_LQ', 'Sweden_B', 'France_TX', 'Sweden_LH'))) %>%  
+  comp_barplot(
+    tax_level = "Phylum", n_taxa = 10,
+    bar_outline_colour = NA,
+    bar_width = 0.7,
+    taxon_renamer = toupper,
+    facet_by = "Country",
+    label = "Treatment",
+    x = "Treatment"
+    ) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title =element_text(size = 14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 10, vjust = 1, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/Phylum_stackbar_16S.pdf",width=12,height=8,units ="in", device="pdf")
+
+```
+
+Stacked bar plot based on Order (clean version)
+
+```{r stack bar Order}
+
+# Clean graph and cluster by country
+
+MJ16SR_clean2_Order<-MJ16SR_clean%>%
+  ps_select(Country, Treatment, Country_Treatment, Soil_pH) %>% # avoids lots of phyloseq::merge_samples warnings
+  merge_samples2(group = "Country_Treatment", funs = list())%>%
+  tax_glom(taxrank = "Order")
+
+MJ16SR_clean2_Order %>%
+  tax_filter(
+    tax_level = "Order", min_prevalence = 0.001,
+    prev_detection_threshold = 100
+  ) %>%
+  ps_mutate(
+    Treatment = factor(Treatment, levels = c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime','Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)','Dolomite', 'Larvikite', 'Marble','Norite','Olivine','10 ton/ha lime', '20 ton /ha lime','Slaked lime', 'Tunnel kiln slag', 'Mixed lime'))) %>%  
+  ps_mutate(
+    Country = factor(Country, levels = c('Denmark', 'Ireland', 'Finland', 'Norway', 'New_Zealand', 'France_LQ', 'Sweden_B', 'France_TX', 'Sweden_LH'))) %>%  
+  comp_barplot(
+    tax_level = "Order", n_taxa = 15,
+    bar_outline_colour = NA,
+    bar_width = 0.7,
+    taxon_renamer = toupper,
+    facet_by = "Country",
+    label = "Treatment",
+    x = "Treatment"
+  ) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size =14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(angle=45, colour = "black", size=10, vjust = 1, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size=12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/Order_stackbar_16S.pdf",width=12,height=8,units ="in", device="pdf")
+```
+
+
+Lime treatment comparison for functional genes
+
+```{r lime treatment comparison functional genes}
+
+# Read the file again because it has been reorganized
+Magge_joint_16S_metadata <- data.frame(sample_data(Magge_joint_16S))
+
+func_data_long <- gather(Magge_joint_16S_metadata, Target, measurement, bac:coma, factor_key = TRUE)
+func_data_long
+
+
+func_data_long <- func_data_long[ -c(1:5, 7, 11:42) ]
+func_data_long
+func_data_long <- func_data_long %>% mutate_at(c('measurement'), as.numeric)
+
+library(extrafont)
+library(grDevices)
+windowsFonts(Time = windowsFont("Times"))
+
+library(ggpubr)
+
+Denmark_order <- c('Control', '4 t/ha lime', '8 t/ha lime', '12 t/ha lime') 
+func_data_long_De <- func_data_long
+
+func_data_long_De$Treatment = factor(func_data_long_De$Treatment, levels = c('Control', '4 t/ha lime', '8 t/ha lime', '12 t/ha lime'))
+
+DE_comparisons <- list(c('Control', '4 t/ha lime'), c('Control', '8 t/ha lime'), c('Control', '12 t/ha lime'))
+
+
+# Denmark results
+ggplot(subset(func_data_long_De, Country %in% c("Denmark")), aes(x = Treatment, y = measurement))+ 
+  stat_compare_means(method = "kruskal.test", size = 3, aes(group = Treatment), label.x.npc = "left", vjust = -9) +
+  geom_boxplot() +
+  facet_wrap(.~Target, drop = TRUE, scales = "free_y")+
+  theme(text = element_text(family = "Times"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 8, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 8),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  ggtitle("Denmark") +
+  stat_compare_means(method = "t.test" , comparisons = DE_comparisons, size = 3) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.4)))
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/Denmark_func.pdf",width=12,height=10,units ="in", device="pdf")
+
+Ireland_order <- c('Control', 'Lime (2011, 2013)', 'Lime (2013)') 
+func_data_long_IR <- func_data_long
+
+func_data_long_IR$Treatment = factor(func_data_long_IR$Treatment, levels = c('Control', 'Lime (2011, 2013)', 'Lime (2013)'))
+func_data_long_IR <- func_data_long_IR %>% 
+  drop_na(c('Treatment'))
+
+IR_comparisons <- list(c('Control', 'Lime (2011, 2013)'), c('Control', 'Lime (2013)'))
+
+# Ireland results
+ggplot(func_data_long_IR, aes(x = Treatment, y = measurement))+ 
+  stat_compare_means(method = "kruskal.test", size = 3, aes(group = Treatment), label.x.npc = "left", vjust = -9) +
+  geom_boxplot()+
+  facet_wrap(.~Target, drop = TRUE, scales = "free_y")+
+  theme(text = element_text(family = "Times"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 8, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 8),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  ggtitle("Ireland")+
+  stat_compare_means(method = "t.test" , comparisons = IR_comparisons, size = 3) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.4)))
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/Ireland_func.pdf",width=12,height=10,units ="in", device="pdf")
+
+# Norway results
+NO_comparisons <- list(c('Control', 'Dolomite'), c('Control', 'Larvikite'), c('Control', 'Marble'), c('Control', 'Norite'), c('Control', 'Olivine'))
+
+
+ggplot(subset(func_data_long, Country %in% c("Norway")), aes(x=Treatment, y=measurement)) + 
+  geom_boxplot()+
+  facet_wrap(.~Target, drop = TRUE, scales = "free_y")+
+  theme(text = element_text(family = "Times"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 8, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 8),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  stat_compare_means(method = "kruskal.test", size = 3, label.x.npc = "left", vjust = -9)+
+  ggtitle("Norway")+
+  stat_compare_means(method = "t.test" , size = 3, comparisons = NO_comparisons) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.4)))
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/Norway_func.pdf",width=12,height=10,units ="in", device="pdf")
+
+# + scale_x_discrete(limits = Norway_order) 
+
+SWLH_comparisons <- list(c('Control', 'Mixed lime'), c('Control', 'Slaked lime'), c('Control', 'Tunnel kiln slag'))
+
+# Sweden_LH results
+ggplot(subset(func_data_long, Country %in% c("Sweden_LH")), aes(x=Treatment, y=measurement)) + 
+  geom_boxplot()+
+  facet_wrap(.~Target, drop = TRUE, scales = "free_y")+
+  theme(text = element_text(family = "Times"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12, face="bold"),
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 8, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 8),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  stat_compare_means(method = "kruskal.test", size = 3, label.x.npc = "left", vjust = -9)+
+  ggtitle("Sweden_LH")+
+  stat_compare_means(method = "t.test", size = 3, comparisons = SWLH_comparisons) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.4)))
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/SWLH_func.pdf",width=12,height=10,units ="in", device="pdf")
+
+SWB_comparisons <- list( c('Control', '10 ton/ha lime'), c('Control', '20 ton /ha lime'))
+
+
+SwedenB_order <- c('Control', '10 ton/ha lime', '20 ton /ha lime') 
+func_data_long_SwB <- func_data_long
+
+func_data_long_SwB$Treatment = factor(func_data_long_SwB$Treatment, levels=c('Control', '10 ton/ha lime', '20 ton /ha lime'))
+func_data_long_SwB<-func_data_long_SwB %>% 
+  drop_na(c('Treatment'))
+
+# Sweden_B results
+ggplot(func_data_long_SwB, aes(x=Treatment, y=measurement)) + 
+  geom_boxplot()+
+  facet_wrap(.~Target, drop = TRUE, scales = "free_y")+
+  theme(text = element_text(family = "Times"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12, face="bold"),
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 8, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 8),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank()) +
+  stat_compare_means(method = "kruskal.test", size = 3, label.x.npc = "left", vjust = -9)+
+  ggtitle("Sweden_B")+
+  stat_compare_means(method = "t.test", size = 3, comparisons = SWB_comparisons) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.4)))
+
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/SWB_func.pdf",width=12,height=10,units ="in", device="pdf")
+```
+
+
+distance comparisons Ireland
+
+```{r distance comparisons Ireland}
+
+Magge_joint_16S_rare_IR <- subset_samples(Magge_joint_16S_rare, Country == "Ireland")
+Magge_joint_16S_rare_IR
+
+Totu_table = t(otu_table(Magge_joint_16S_rare_IR)) # transpose otu table
+otu_table(Magge_joint_16S_rare_IR) = Totu_table
+
+p = Magge_joint_16S_rare_IR
+m = "bray"
+s = "X.SampleID"
+d = "Treatment"   # Day
+
+# Calculate distances
+library(reshape2)
+library(reshape)
+library(dplyr)
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor, as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor, as.character) 
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Treatment")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Treatment2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums_16s_ireland = wu.sd %>%
+  filter(Treatment == 'Control') %>%
+  mutate_if(is.factor,as.character) %>%
+  mutate(country = "Ireland")
+
+
+library(ggpubr)
+
+# Order factors
+wu.sd.sums_16s_ireland$Treatment2 = factor(wu.sd.sums_16s_ireland$Treatment2, levels = c('Control','Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)'))
+
+IR_16S_dist_plot<-ggplot(wu.sd.sums_16s_ireland, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_point() +
+  geom_boxplot() + ylab("Bray distance") + xlab("Treatment") +
+  theme(axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=18, angle = 45), axis.text.y = element_text(colour = "black", size = 18), axis.title.y = element_text(size = 18), 
+        strip.text.x = element_text(face = "bold", size = 18), 
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  stat_compare_means(method = "kruskal.test", size = 3,vjust = 30, aes(group = Treatment2))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control") + ylim(0, 1)+ggtitle("Ireland")
+
+IR_16S_dist_plot
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/IR_16S_dist_pH.pdf",width=4,height=4,units ="in", device="pdf")
+
+
+```
+
+distance comparisons Norway
+```{r distance comparisons Norway}
+
+Magge_joint_16S_rare_NO <- subset_samples(Magge_joint_16S_rare, Country == "Norway")
+Magge_joint_16S_rare_NO
+
+Totu_table =t(otu_table(Magge_joint_16S_rare_NO)) #transpose otu table
+otu_table(Magge_joint_16S_rare_NO)=Totu_table
+
+p = Magge_joint_16S_rare_NO
+m = "bray"
+s = "X.SampleID"
+d = "Treatment"   
+
+# Calc distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor,as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor,as.character) 
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Treatment")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Treatment2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums_16s_norway = wu.sd %>%
+  filter(Treatment == 'Control')%>%
+  mutate_if(is.factor,as.character) %>%
+  mutate(country = "Norway")
+
+
+# Order factors
+wu.sd.sums_16s_norway$Treatment2 = factor(wu.sd.sums_16s_norway$Treatment2, levels=c('Control','Dolomite', 'Larvikite', 'Marble','Norite','Olivine'))
+
+NO_16S_dist_plot<-ggplot(wu.sd.sums_16s_norway, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_point() +
+  geom_boxplot() + ylab("Bray distance") + xlab("Treatment") +
+  theme(axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=18, angle = 45), axis.text.y = element_text(colour = "black", size=18), axis.title.y = element_text(size=18), 
+        strip.text.x = element_text(face="bold", size=18), 
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  stat_compare_means(method = "kruskal.test", size=3,vjust = 30, aes(group = Treatment2))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ylim(0, 1)+ggtitle("Norway")
+NO_16S_dist_plot
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/NO_16S_dist_pH.pdf",width=6,height=3,units ="in", device="pdf")
+
+```
+
+distance comparisons Denmark
+
+```{r distance comparisons Denmark}
+
+Magge_joint_16S_rare_DE <- subset_samples(Magge_joint_16S_rare, Country == "Denmark")
+Magge_joint_16S_rare_DE
+
+Totu_table =t(otu_table(Magge_joint_16S_rare_DE)) #transpose otu table
+otu_table(Magge_joint_16S_rare_DE)=Totu_table
+
+p = Magge_joint_16S_rare_DE
+m = "bray"
+s = "X.SampleID"
+d = "Treatment"   
+
+# Calculating distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+# Removing self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor,as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor,as.character) 
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Treatment")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Treatment2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums_16s_denmark = wu.sd %>%
+  filter(Treatment == 'Control')%>%
+  mutate_if(is.factor,as.character) %>%
+  mutate(country = "Denmark")
+
+
+# Order factors
+wu.sd.sums_16s_denmark$Treatment2 = factor(wu.sd.sums_16s_denmark$Treatment2, levels=c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime'))
+
+DE_16S_dist_plot<-ggplot(wu.sd.sums_16s_denmark, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_point() +
+  geom_boxplot() + ylab("Bray distance") + xlab("Treatment") +
+  theme(axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=18, angle = 45), axis.text.y = element_text(colour = "black", size=18), axis.title.y = element_text(size=18), 
+        strip.text.x = element_text(face="bold", size=18), 
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  stat_compare_means(method = "kruskal.test", size=3,vjust = 30, aes(group = Treatment2))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ylim(0, 1)+ggtitle("Denmark")
+
+DE_16S_dist_plot
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/De_16S_dist_pH.pdf",width=4,height=3,units ="in", device="pdf")
+
+```
+
+
+distance comparisons Sweden_LH
+
+```{r distance comparisons Sweden_LH}
+
+Magge_joint_16S_rare_SWLH <- subset_samples(Magge_joint_16S_rare, Country == "Sweden_LH")
+Magge_joint_16S_rare_SWLH
+
+Totu_table =t(otu_table(Magge_joint_16S_rare_SWLH)) #transpose otu table
+otu_table(Magge_joint_16S_rare_SWLH)=Totu_table
+
+p = Magge_joint_16S_rare_SWLH
+m = "bray"
+s = "X.SampleID"
+d = "Treatment"   
+
+# Calculate distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor,as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor,as.character) 
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Treatment")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Treatment2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums_16s_swedenlh = wu.sd %>%
+  filter(Treatment == 'Control')%>%
+  mutate_if(is.factor,as.character) %>%
+  mutate(country = "Sweden_LH")
+
+
+# Order factors
+# wu.sd.sums$Treatment2 = factor(wu.sd.sums$Treatment2, levels=c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime'))
+
+SWLH_16S_dist_plot<-ggplot(wu.sd.sums_16s_swedenlh, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_point() +
+  geom_boxplot() + ylab("Bray distance") + xlab("Treatment") +
+  theme(axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=18, angle = 45), axis.text.y = element_text(colour = "black", size=18), axis.title.y = element_text(size=18), 
+        strip.text.x = element_text(face="bold", size=18), 
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  stat_compare_means(method = "kruskal.test", size=3,vjust = 30,  aes(group = Treatment2))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ylim(0, 1)+ggtitle("Sweden_LH")
+
+SWLH_16S_dist_plot
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/SWLH_16S_dist_pH.pdf",width=4,height=3,units ="in", device="pdf")
+
+
+
+
+
+```
+
+
+distance comparisons Sweden_B
+
+```{r distance comparisons Sweden_B}
+
+Magge_joint_16S_rare_SWB <- subset_samples(Magge_joint_16S_rare, Country == "Sweden_B")
+Magge_joint_16S_rare_SWB
+
+Totu_table =t(otu_table(Magge_joint_16S_rare_SWB)) #transpose otu table
+otu_table(Magge_joint_16S_rare_SWB)=Totu_table
+
+p = Magge_joint_16S_rare_SWB
+m = "bray"
+s = "X.SampleID"
+d = "Treatment"   
+
+# Calculate distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor,as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor,as.character) 
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Treatment")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Treatment2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums_16s_swedenb = wu.sd %>%
+  filter(Treatment == 'Control')%>%
+  mutate_if(is.factor,as.character) %>%
+  mutate(country = "Sweden_B")
+
+
+# Order factors
+wu.sd.sums_16s_swedenb$Treatment2 = factor(wu.sd.sums_16s_swedenb$Treatment2, levels=c('Control','10 ton/ha lime', '20 ton /ha lime'))
+
+SWB_16S_dist_plot<-ggplot(wu.sd.sums_16s_swedenb, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_point() +
+  geom_boxplot() + ylab("Bray distance") + xlab("Treatment") +
+  theme(axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=18, angle = 45), axis.text.y = element_text(colour = "black", size=18), axis.title.y = element_text(size=18), 
+        strip.text.x = element_text(face="bold", size=18), 
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  stat_compare_means(method = "kruskal.test", size=3,vjust = 30,  aes(group = Treatment2))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ylim(0, 1)+ggtitle("Sweden_B")
+
+SWB_16S_dist_plot
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/SWB_16S_dist_pH.pdf",width=4,height=3,units ="in", device="pdf")
+
+
+
+
+#combine all plots
+library(gridExtra)
+#pdf("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/16S_distances_pH.pdf", width = 12, height = 16)
+
+# Open a new pdf file
+#grid.arrange(NO_16S_dist_plot,DE_16S_dist_plot,SWB_16S_dist_plot,SWLH_16S_dist_plot,IR_16S_dist_plot, 
+#            ncol=2, nrow=3, widths=c(4, 4), heights=c(2,2,2))
+#dev.off()
+    
+```
+
+
+```{r making a summary table, results='markup'}
+
+library(dplyr)
+library(broom)
+library(tidyr)
+library(rstatix)
+
+# Filter countries
+Magge_joint_16S_metadata_filtered <- Magge_joint_16S_metadata %>%
+  select(X.SampleID, Country, Soil_pH, Treatment, 16:50) %>%
+  filter(Country %in% c("Denmark", "Sweden_LH", "Sweden_B", "Norway", "Ireland"))
+
+# Gathering
+Magge_joint_16S_metadata_filtered_gathered <- Magge_joint_16S_metadata_filtered %>%
+  relocate(Treatment, .before = Soil_pH) %>%
+  gather(Parameter, Measurement, Soil_pH:nosi.nosii, factor_key = TRUE)
+  
+# Performing kruskal test comparing all parameters to treatment
+Magge_joint_16S_metadata_filtered_kw <- Magge_joint_16S_metadata_filtered_gathered %>%
+  group_by(Parameter, Country) %>%
+  do(tidy(kruskal.test(.$Measurement, .$Treatment))) %>%
+  ungroup() %>%
+  arrange(Country)
+  
+# Calculating min and max values
+Magge_joint_16S_metadata_filtered_extreme <- Magge_joint_16S_metadata_filtered_gathered %>%
+  group_by(Parameter, Country) %>%
+  summarise_at(vars(Measurement), funs(min, max)) %>%
+  arrange(Country)
+
+# Calculating effect size
+Magge_joint_16S_metadata_filtered_effect_size <- Magge_joint_16S_metadata_filtered_gathered %>%
+  group_by(Parameter, Country) %>%
+  kruskal_effsize(Measurement ~ Treatment) %>%
+  arrange(Country)
+ 
+# Joining tables
+Magge_joint_16S_metadata_filtered_joined <- bind_cols(Magge_joint_16S_metadata_filtered_kw, Magge_joint_16S_metadata_filtered_extreme, Magge_joint_16S_metadata_filtered_effect_size)
+Magge_joint_16S_metadata_filtered_joined_named <- Magge_joint_16S_metadata_filtered_joined %>%
+  select(Parameter...1, Country...2, p.value, effsize, min, max) %>%
+  dplyr::rename("Parameter" = Parameter...1, "Country" = Country...2, "P_value" = p.value, "Effect_size" = effsize, "Minimal value" = min, "Maximal value" = max)
+
+# Filtering for significant values only
+Magge_joint_16S_metadata_filtered_joined_named_significant <- Magge_joint_16S_metadata_filtered_joined_named %>%
+  filter(P_value < 0.05)
+Magge_joint_16S_metadata_filtered_joined_named_significant
+
+# writexl::write_xlsx(Magge_joint_16S_metadata_filtered_joined_named_significant, "MAGGE_Summary_table.xlsx")
+```
+
+
+
+```{r Find significantly affected Phyla using rstatix}
+
+#no hits after p adjusted so used just p value
+Magge_joint_16S_rare_DE_df<-Magge_joint_16S_rare_DE %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+#how does this community look?
+d<- ggplot(Magge_joint_16S_rare_DE_df,aes(x=Treatment,y=Abundance,fill=Phylum))+ 
+  geom_bar(stat="identity",position="fill") +
+  scale_y_continuous()+
+  ylab("Relative Abundance")
+d
+
+library(rstatix)
+# do tests
+KW_taxa_DE<-Magge_joint_16S_rare_DE_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Denmark")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_DE<-Magge_joint_16S_rare_DE_df %>% 
+  filter(OTU %in% KW_taxa_DE$OTU) 
+
+
+only_sig_taxa_DE$Treatment = factor(only_sig_taxa_DE$Treatment, levels=c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime'))
+
+# plot
+DE_sig_tax_plot<-ggplot(only_sig_taxa_DE, aes(x=Treatment, y=Abundance, fill=Phylum)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ggtitle("Denmark")
+
+DE_sig_tax_plot
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/DE_sig_tax_plot.pdf",width=22,height=22,units ="in", device="pdf")
+
+
+
+#Ireland
+#no hits after p adjusted so used just p value
+Magge_joint_16S_rare_IR_df<-Magge_joint_16S_rare_IR %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_IR<-Magge_joint_16S_rare_IR_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Ireland")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_IR<-Magge_joint_16S_rare_IR_df %>% 
+  filter(OTU %in% KW_taxa_IR$OTU) 
+
+
+only_sig_taxa_IR$Treatment = factor(only_sig_taxa_IR$Treatment, levels = c('Control','Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)'))
+
+# plot
+IR_sig_tax_plot<-ggplot(only_sig_taxa_IR, aes(x=Treatment, y=Abundance, fill=Phylum)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ggtitle("Ireland")
+
+IR_sig_tax_plot
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/IR_sig_tax_plot.pdf",width=20,height=15,units ="in", device="pdf")
+
+
+#Sweden LH
+#no hits after p adjusted so used just p value
+Magge_joint_16S_rare_SWLH_df<-Magge_joint_16S_rare_SWLH %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_SWLH<-Magge_joint_16S_rare_SWLH_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Sweden_LH")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_SWLH<-Magge_joint_16S_rare_SWLH_df %>% 
+  filter(OTU %in% KW_taxa_SWLH$OTU) 
+
+
+only_sig_taxa_SWLH$Treatment = factor(only_sig_taxa_SWLH$Treatment, levels=c('Control','Mixed lime', 'Slaked lime', 'Tunnel kiln slag'))
+
+# plot
+SWLH_sig_tax_plot<-ggplot(only_sig_taxa_SWLH, aes(x=Treatment, y=Abundance, fill=Phylum, group=Treatment)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = 'Control')+ggtitle("Sweden LH")
+
+SWLH_sig_tax_plot
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/SWLH_sig_tax_plot.pdf",width=21,height=20,units ="in", device="pdf")
+
+
+#no hits after p adjusted so used just p value
+Magge_joint_16S_rare_SWB_df<-Magge_joint_16S_rare_SWB %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_SWB<-Magge_joint_16S_rare_SWB_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Sweden_B")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_SWB<-Magge_joint_16S_rare_SWB_df %>% 
+  filter(OTU %in% KW_taxa_SWB$OTU) 
+
+
+only_sig_taxa_SWB$Treatment = factor(only_sig_taxa_SWB$Treatment, levels=c('Control','10 ton/ha lime', '20 ton /ha lime'))
+
+# plot
+SWB_sig_tax_plot<-ggplot(only_sig_taxa_SWB, aes(x=Treatment, y=Abundance, fill=Phylum, group=Treatment)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = 'Control')+ggtitle("Sweden LH")
+
+SWB_sig_tax_plot
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/SWB_sig_tax_plot.pdf",width=21,height=20,units ="in", device="pdf")
+
+# Combined table for taxa
+KW_taxa_all <- bind_rows(KW_taxa_DE, KW_taxa_IR, KW_taxa_SWB, KW_taxa_SWLH)
+KW_taxa_all <- KW_taxa_all %>%
+  select(-.y., -n, -df) %>%
+  arrange(desc(p))
+
+KW_taxa_all
+
+```
+
+```{r combined distance plots}
+
+# For that run both Joint_MAGGE_16S_all_rev.Rmd and Joint_MAGGE_ITS_all_rev.Rmd
+
+wu.sd.sums_16s_combined <- bind_rows(wu.sd.sums_16s_denmark, wu.sd.sums_16s_ireland, wu.sd.sums_16s_norway, wu.sd.sums_16s_swedenb, wu.sd.sums_16s_swedenlh)
+wu.sd.sums_16s_combined$type <- rep("16S", 269)
+wu.sd.sums_its_combined <- bind_rows(wu.sd.sums_its_denmark, wu.sd.sums_its_ireland, wu.sd.sums_its_norway, wu.sd.sums_its_swedenb, wu.sd.sums_its_swedenlh)
+wu.sd.sums_its_combined$type <- rep("ITS", 269)
+wu.sd.sums_all_combined <- bind_rows(wu.sd.sums_16s_combined, wu.sd.sums_its_combined)
+
+
+wu.sd.sums_all_combined$Treatment2 = factor(wu.sd.sums_all_combined$Treatment2, levels = c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime',
+                                                                                            'Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)',
+                                                                                              'Dolomite', 'Larvikite','Marble','Norite','Olivine',
+                                                                                              '10 ton/ha lime', '20 ton /ha lime', 'Mixed lime',
+                                                                                              'Slaked lime', 'Tunnel kiln slag'))
+
+stat.test <- wu.sd.sums_all_combined %>%
+  group_by(country) %>%
+  t_test(value ~ Treatment2, ref.group = "Control") %>%
+  adjust_pvalue(method = "bonferroni") %>%
+  add_significance()
+stat.test 
+
+stat.test <- stat.test %>%
+ add_xy_position(x = "Treatment2")
+
+
+kw <- wu.sd.sums_all_combined %>%
+  group_by(type, country) %>%
+  do(tidy(kruskal.test(.$value, .$Treatment2))) %>%
+  mutate(across(where(is.numeric), round, 6))
+
+kw16 <- filter(kw, type == "16S")
+kwits <- filter(kw, type == "ITS")
+
+
+distance_plot <- ggplot(wu.sd.sums_all_combined, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_boxplot(aes(fill = type)) + labs(y = "Bray distance", x = "", fill = "Sequence type") +
+  facet_wrap(~country, drop = TRUE, scales = "free") + scale_fill_viridis_d() +
+  theme(
+        axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size = 8, angle = 45),
+        axis.text.y = element_text(colour = "black", size = 8),
+        axis.title.y = element_text(size = 10), 
+        strip.text.x = element_text(face = "bold", size = 12),
+        legend.position = c(0.8, 0.2),
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2))) +
+  scale_x_discrete(breaks = wu.sd.sums_all_combined$Treatment2) +
+  #stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01, hide.ns = TRUE)
+  #stat_compare_means(method = "kruskal.test", size = 2, vjust = -1)
+  geom_text(data = kw16, size = 3, aes(x = 1.3, y = 1.1, label = paste0("Kruskal-Wallis\n p (16S) =", p.value))) +
+  geom_text(data = kwits, size = 3, aes(x = 1.3, y = 1, label = paste0("p (ITS) =", p.value)))
+
+distance_plot
+
+#text = element_text(family = "Time"),
+#/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals
+#
+ggsave("C:/Users/bogda/Documents/PhD/MAGGE/Figs/combined_distance_plot_ITS_16S_times.pdf",width=13,height=11,units ="in", device="pdf")
+
+```
+
+```{r response ratio calculation and LRR plot for Denmark, echo=FALSE,results='hide',fig.keep='all'}
+
+library(SingleCaseES)
+
+# Writing functions for LRR
+LRR_MAGGE <- function(x = Magge_joint_16S_metadata_filtered_gathered, country, treatment, parameter) {
+
+Controls <- Magge_joint_16S_metadata_filtered_gathered %>%
+  filter(Country == country) %>%
+  select(Measurement, Treatment, Parameter) %>%
+  filter(Treatment == "Control" & Parameter == parameter) %>%
+  select(Measurement)
+
+Response <- Magge_joint_16S_metadata_filtered_gathered %>%
+  filter(Country == country) %>%
+  select(Measurement, Treatment, Parameter) %>%
+  filter(Treatment == treatment & Parameter == parameter) %>%
+  select(Measurement)
+
+LRRd(as.numeric(Controls$Measurement), as.numeric(Response$Measurement))
+
+}
+
+Denmark_LRR <- function(x = Magge_joint_16S_metadata_filtered_gathered, y) {
+  bind_rows(LRR_MAGGE(x, "Denmark", "4 t/ha lime", y), # Change country and treatment here
+            LRR_MAGGE(x, "Denmark", "8 t/ha lime", y),
+            LRR_MAGGE(x, "Denmark", "12 t/ha lime", y))
+}
+
+# Making a table with results of LRR
+Denmark_LRR_result <- bind_rows(
+          Denmark_LRR(y ="Soil_pH"),
+          Denmark_LRR(y = "soc"),
+          Denmark_LRR(y = "tn"),
+          Denmark_LRR(y = "sand"),
+          Denmark_LRR(y = "silt"),
+          Denmark_LRR(y = "clay"),
+          Denmark_LRR(y = "Al"),
+          Denmark_LRR(y = "Ca"),
+          Denmark_LRR(y = "Co"),
+          Denmark_LRR(y = "Cu"),
+          Denmark_LRR(y = "Fe"),
+          Denmark_LRR(y = "K"),
+          Denmark_LRR(y = "Mg"),
+          Denmark_LRR(y = "Mn"),
+          Denmark_LRR(y = "Na"),
+          Denmark_LRR(y = "P"),
+          Denmark_LRR(y = "S"),
+          Denmark_LRR(y = "Zn"),
+          Denmark_LRR(y = "its")
+          )
+
+# Adding columns
+Denmark_LRR_result$Parameter <- as.factor(rep(c("Soil_pH", "soc", "tn", "sand", "silt", "clay", "Al", "Ca", "Co", "Cu", "Fe",
+                                       "K", "Mg", "Mn", "Na", "P", "S", "Zn", "its"), each = 3))
+
+Denmark_LRR_result$Treatment <- as.factor(rep(c("4 t/ha lime", "8 t/ha lime", "12 t/ha lime")))
+Denmark_LRR_result$Treatment <- factor(Denmark_LRR_result$Treatment, levels = c("4 t/ha lime", "8 t/ha lime", "12 t/ha lime"))
+Denmark_LRR_result$Country <- rep(c("Denmark"))
+
+# Removing not significant values
+Denmark_LRR_result <- Denmark_LRR_result %>%
+  filter(Est != 0)
+
+library(ggplot2)
+library(wacolors)
+library(extrafont)
+
+
+# LRR plot                      
+Denmark_LRR_result_plot <- ggplot(Denmark_LRR_result, aes(reorder(Parameter, -Est), y = Est, colour = Treatment)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + ylab("LRR 95% confident interval") + xlab("Parameter") +
+  theme_light() + scale_colour_viridis_d() + 
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  ggtitle("Denmark")
+  
+
+#Denmark_LRR_result_plot
+
+
+```
+
+```{r response ratio calculation and LRR plot for Ireland, echo=FALSE,results='hide',fig.keep='all'}
+
+Ireland_LRR <- function(x = Magge_joint_16S_metadata_filtered_gathered, y) {
+  bind_rows(LRR_MAGGE(x, "Ireland", "Lime (2011)", y), # Change country and treatment here
+            LRR_MAGGE(x, "Ireland", "Lime (2011, 2013)", y),
+            LRR_MAGGE(x, "Ireland", "Lime (2013)", y))
+}
+
+# Making a table with results of LRR
+Ireland_LRR_result <- bind_rows(
+          Ireland_LRR(y ="Soil_pH"),
+          Ireland_LRR(y = "soc"),
+          Ireland_LRR(y = "tn"),
+          Ireland_LRR(y = "sand"),
+          Ireland_LRR(y = "silt"),
+          Ireland_LRR(y = "clay"),
+          Ireland_LRR(y = "Al"),
+          Ireland_LRR(y = "Ca"),
+          Ireland_LRR(y = "Co"),
+          Ireland_LRR(y = "Cu"),
+          Ireland_LRR(y = "Fe"),
+          Ireland_LRR(y = "K"),
+          Ireland_LRR(y = "Mg"),
+          Ireland_LRR(y = "Mn"),
+          Ireland_LRR(y = "Na"),
+          Ireland_LRR(y = "P"),
+          Ireland_LRR(y = "S"),
+          Ireland_LRR(y = "Zn"),
+          Ireland_LRR(y = "its")
+          )
+
+# Adding columns
+Ireland_LRR_result$Parameter <- as.factor(rep(c("Soil_pH", "soc", "tn", "sand", "silt", "clay", "Al", "Ca", "Co", "Cu", "Fe",
+                                       "K", "Mg", "Mn", "Na", "P", "S", "Zn", "its"), each = 3))
+
+
+Ireland_LRR_result$Treatment <- as.factor(rep(c("Lime (2011)", "Lime (2011, 2013)", "Lime (2013)")))
+Ireland_LRR_result$Treatment <- factor(Ireland_LRR_result$Treatment, levels = c("Lime (2011)", "Lime (2011, 2013)", "Lime (2013)"))
+Ireland_LRR_result$Country <- rep(c("Ireland"))
+Ireland_LRR_result <- Ireland_LRR_result %>%
+  filter(Est != 0)
+
+
+# LRR plot                      
+Ireland_LRR_result_plot <- ggplot(Ireland_LRR_result, aes(reorder(Parameter, -Est), y = Est, colour = Treatment)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + ylab("LRR 95% confident interval") + xlab("Parameter") +
+  theme_light() + scale_colour_viridis_d() + 
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  ggtitle("Ireland")
+  
+
+Ireland_LRR_result_plot
+```
+
+```{r response ratio calculation and LRR plot for Norway, echo=FALSE,results='hide',fig.keep='all'}
+Norway_LRR <- function(x = Magge_joint_16S_metadata_filtered_gathered, y) {
+  bind_rows(LRR_MAGGE(x, "Norway", "Dolomite", y), # Change country and treatment here
+            LRR_MAGGE(x, "Norway", "Larvikite", y),
+            LRR_MAGGE(x, "Norway", "Marble", y),
+            LRR_MAGGE(x, "Norway", "Norite", y),
+            LRR_MAGGE(x, "Norway", "Olivine", y))
+}
+
+# Making a table with results of LRR
+Norway_LRR_result <- bind_rows(
+          Norway_LRR(y ="Soil_pH"),
+          Norway_LRR(y = "soc"),
+          Norway_LRR(y = "tn"),
+          Norway_LRR(y = "sand"),
+          Norway_LRR(y = "silt"),
+          Norway_LRR(y = "clay"),
+          Norway_LRR(y = "Al"),
+          Norway_LRR(y = "Ca"),
+          Norway_LRR(y = "Co"),
+          Norway_LRR(y = "Cu"),
+          Norway_LRR(y = "Fe"),
+          Norway_LRR(y = "K"),
+          Norway_LRR(y = "Mg"),
+          Norway_LRR(y = "Mn"),
+          Norway_LRR(y = "Na"),
+          Norway_LRR(y = "P"),
+          Norway_LRR(y = "S"),
+          Norway_LRR(y = "Zn"),
+          Norway_LRR(y = "its")
+          )
+
+# Adding columns
+Norway_LRR_result$Parameter <- as.factor(rep(c("Soil_pH", "soc", "tn", "sand", "silt", "clay", "Al", "Ca", "Co", "Cu", "Fe",
+                                       "K", "Mg", "Mn", "Na", "P", "S", "Zn", "its"), each = 5))
+
+
+Norway_LRR_result$Treatment <- as.factor(rep(c("Dolomite", "Larvikite", "Marble", "Norite", "Olivine")))
+Norway_LRR_result$Treatment <- factor(Norway_LRR_result$Treatment, levels = c("Dolomite", "Larvikite", "Marble", "Norite", "Olivine"))
+Norway_LRR_result$Country <- rep(c("Norway"))
+Norway_LRR_result <- Norway_LRR_result %>%
+  filter(Est != 0)
+
+
+# LRR plot                      
+Norway_LRR_result_plot <- ggplot(Norway_LRR_result, aes(reorder(Parameter, -Est), y = Est, colour = Treatment)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + ylab("LRR 95% confident interval") + xlab("Parameter") +
+  theme_light() + scale_colour_viridis_d() + 
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  ggtitle("Norway")
+  
+
+Norway_LRR_result_plot
+```
+
+```{r response ratio calculation and LRR plot for Sweden_B, echo=FALSE,results='hide',fig.keep='all'}
+
+Sweden_B_LRR <- function(x = Magge_joint_16S_metadata_filtered_gathered, y) {
+  bind_rows(LRR_MAGGE(x, "Sweden_B", "10 ton/ha lime", y), # Change country and treatment here
+            LRR_MAGGE(x, "Sweden_B", "20 ton /ha lime", y),
+            )
+}
+
+# Making a table with results of LRR
+Sweden_B_LRR_result <- bind_rows(
+          Sweden_B_LRR(y ="Soil_pH"),
+          Sweden_B_LRR(y = "soc"),
+          Sweden_B_LRR(y = "tn"),
+          Sweden_B_LRR(y = "sand"),
+          Sweden_B_LRR(y = "silt"),
+          Sweden_B_LRR(y = "clay"),
+          Sweden_B_LRR(y = "Al"),
+          Sweden_B_LRR(y = "Ca"),
+          Sweden_B_LRR(y = "Co"),
+          Sweden_B_LRR(y = "Cu"),
+          Sweden_B_LRR(y = "Fe"),
+          Sweden_B_LRR(y = "K"),
+          Sweden_B_LRR(y = "Mg"),
+          Sweden_B_LRR(y = "Mn"),
+          Sweden_B_LRR(y = "Na"),
+          Sweden_B_LRR(y = "P"),
+          Sweden_B_LRR(y = "S"),
+          Sweden_B_LRR(y = "Zn"),
+          Sweden_B_LRR(y = "its")
+          )
+
+# Adding columns
+Sweden_B_LRR_result$Parameter <- as.factor(rep(c("Soil_pH", "soc", "tn", "sand", "silt", "clay", "Al", "Ca", "Co", "Cu", "Fe",
+                                       "K", "Mg", "Mn", "Na", "P", "S", "Zn", "its"), each = 2))
+
+
+Sweden_B_LRR_result$Treatment <- as.factor(rep(c("10 ton/ha lime", "20 ton/ha lime")))
+Sweden_B_LRR_result$Treatment <- factor(Sweden_B_LRR_result$Treatment, levels = c("10 ton/ha lime", "20 ton/ha lime"))
+Sweden_B_LRR_result$Country <- rep(c("Sweden_B"))
+Sweden_B_LRR_result <- Sweden_B_LRR_result %>%
+  filter(Est != 0)
+
+
+# LRR plot                      
+Sweden_B_LRR_result_plot <- ggplot(Sweden_B_LRR_result, aes(reorder(Parameter, -Est), y = Est, colour = Treatment)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + ylab("LRR 95% confident interval") + xlab("Parameter") +
+  theme_light() + scale_colour_viridis_d() + 
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14), 
+    strip.background = element_rect(colour = "black", fill = "white")) +
+  ggtitle("Sweden B")
+  
+
+Sweden_B_LRR_result_plot
+```
+
+```{r response ratio calculation and LRR plot for Sweden_LH, echo=FALSE,results='hide',fig.keep='all'}
+
+Sweden_LH_LRR <- function(x = Magge_joint_16S_metadata_filtered_gathered, y) {
+  bind_rows(LRR_MAGGE(x, "Sweden_LH", "Mixed lime", y), # Change country and treatment here
+            LRR_MAGGE(x, "Sweden_LH", "Slaked lime", y),
+            LRR_MAGGE(x, "Sweden_LH", "Tunnel kiln slag", y)
+            )
+}
+
+# Making a table with results of LRR
+Sweden_LH_LRR_result <- bind_rows(
+          Sweden_LH_LRR(y ="Soil_pH"),
+          Sweden_LH_LRR(y = "soc"),
+          Sweden_LH_LRR(y = "tn"),
+          Sweden_LH_LRR(y = "sand"),
+          Sweden_LH_LRR(y = "silt"),
+          Sweden_LH_LRR(y = "clay"),
+          Sweden_LH_LRR(y = "Al"),
+          Sweden_LH_LRR(y = "Ca"),
+          Sweden_LH_LRR(y = "Co"),
+          Sweden_LH_LRR(y = "Cu"),
+          Sweden_LH_LRR(y = "Fe"),
+          Sweden_LH_LRR(y = "K"),
+          Sweden_LH_LRR(y = "Mg"),
+          Sweden_LH_LRR(y = "Mn"),
+          Sweden_LH_LRR(y = "Na"),
+          Sweden_LH_LRR(y = "P"),
+          Sweden_LH_LRR(y = "S"),
+          Sweden_LH_LRR(y = "Zn"),
+          Sweden_LH_LRR(y = "its")
+          )
+
+# Adding columns
+
+Sweden_LH_LRR_result$Parameter <- as.factor(rep(c("Soil_pH", "soc", "tn", "sand", "silt", "clay", "Al", "Ca", "Co", "Cu", "Fe",
+                                       "K", "Mg", "Mn", "Na", "P", "S", "Zn", "its"), each = 3))
+
+
+Sweden_LH_LRR_result$Treatment <- as.factor(rep(c("Mixed lime", "Slaked lime", "Tunnel kiln slag")))
+Sweden_LH_LRR_result$Treatment <- factor(Sweden_LH_LRR_result$Treatment, levels = c("Mixed lime", "Slaked lime", "Tunnel kiln slag"))
+Sweden_LH_LRR_result$Country <- rep(c("Sweden_LH"))
+Sweden_LH_LRR_result <- Sweden_LH_LRR_result %>%
+  filter(Est != 0)
+
+
+# LRR plot                      
+Sweden_LH_LRR_result_plot <- ggplot(Sweden_LH_LRR_result, aes(reorder(Parameter, -Est), y = Est, colour = Treatment)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + ylab("LRR 95% confident interval") + xlab("Parameter") +
+  theme_light() + scale_colour_viridis_d() + 
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  ggtitle("Sweden LH")
+  
+
+Sweden_LH_LRR_result_plot
+```
+
+
+```{r treatments as pH, echo=FALSE,results='hide',fig.keep='all'}
+
+LRR_joint_table <- bind_rows(
+  Denmark_LRR_result,
+  Ireland_LRR_result,
+  Norway_LRR_result,
+  Sweden_B_LRR_result,
+  Sweden_LH_LRR_result
+)
+
+pH <- Magge_joint_16S_metadata_filtered_gathered %>%
+  filter(Parameter == "Soil_pH") %>%
+  select(Treatment, Country, Parameter, Measurement)
+
+pH_normalized <- left_join(LRR_joint_table, pH, by = "Treatment")
+
+# Determing pH scales
+pH_normalized <- pH_normalized %>%
+  mutate(pH_scale = ifelse(Measurement >= 4 & Measurement <= 5, "4-5",
+                    ifelse(Measurement >= 5 & Measurement <= 6, "5-6",
+                    ifelse(Measurement >= 6 & Measurement <= 7, "6-7",
+                    ifelse(Measurement >= 7 & Measurement <= 8, "7-8", NA))))) %>%
+  drop_na() %>%
+  filter(Est != 0)
+
+LRR_pH_plot <- ggplot(pH_normalized, aes(reorder(Parameter.x, -Est), y = Est, colour = pH_scale)) + 
+  geom_point(size = 2) + 
+  geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + 
+  labs(y = "LRR 95% confident interval", x = "Parameter", color = "pH scale") +
+  theme_light() + 
+  scale_colour_viridis_d() + 
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14,colour = 'black'), 
+    strip.background = element_rect(colour = "black"),
+    legend.position = c(0.8, 0.2)) +
+  facet_wrap(.~Country.x)
+  #ggtitle("LRR plot based on soil pH after treatment") + 
+  
+  
+
+LRR_pH_plot
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/figs/summary_chemicals_LRR_plot.pdf",width=12,height=13,units ="in", device="pdf")
+
+pH_median <- pH %>%
+  mutate(across(Measurement, as.numeric)) %>%
+  group_by(Treatment, Country) %>%
+  summarise_at(vars(Measurement), funs(median)) %>%
+  arrange(Country)
+
+```
+
+```{r LRR functional single plots, Denmark}
+# Filter countries
+
+Magge_joint_16S_metadata_filtered_func <- Magge_joint_16S_metadata %>%
+  select(X.SampleID, Country, Soil_pH, Treatment, bac:coma) %>%
+  filter(Country %in% c("Denmark", "Sweden_LH", "Sweden_B", "Norway", "Ireland"))
+
+# Gathering
+Magge_joint_16S_metadata_filtered_gathered_func <- Magge_joint_16S_metadata_filtered_func %>%
+  relocate(Treatment, .before = Soil_pH) %>%
+  gather(Parameter, Measurement, Soil_pH:coma, factor_key = TRUE)
+
+
+# Writing functions for LRR
+LRR_MAGGE <- function(x = Magge_joint_16S_metadata_filtered_gathered_func, country, treatment, parameter) {
+
+Controls <- Magge_joint_16S_metadata_filtered_gathered_func %>%
+  filter(Country == country) %>%
+  select(Measurement, Treatment, Parameter) %>%
+  filter(Treatment == "Control" & Parameter == parameter) %>%
+  select(Measurement)
+
+Response <- Magge_joint_16S_metadata_filtered_gathered_func %>%
+  filter(Country == country) %>%
+  select(Measurement, Treatment, Parameter) %>%
+  filter(Treatment == treatment & Parameter == parameter) %>%
+  select(Measurement)
+
+LRRd(as.numeric(Controls$Measurement), as.numeric(Response$Measurement))
+
+}
+
+Denmark_LRR <- function(x = Magge_joint_16S_metadata_filtered_gathered_func, y) {
+  bind_rows(LRR_MAGGE(x, "Denmark", "4 t/ha lime", y), # Change country and treatment here
+            LRR_MAGGE(x, "Denmark", "8 t/ha lime", y),
+            LRR_MAGGE(x, "Denmark", "12 t/ha lime", y))
+}
+
+# Making a table with results of LRR
+Denmark_LRR_result <- bind_rows(
+          Denmark_LRR(y = "bac"),
+          Denmark_LRR(y = "cren"),
+          Denmark_LRR(y = "nirk"),
+          Denmark_LRR(y = "nirs"),
+          Denmark_LRR(y = "noszi"),
+          Denmark_LRR(y = "noszii"),
+          Denmark_LRR(y = "aoa"),
+          Denmark_LRR(y = "aob"),
+          Denmark_LRR(y = "coma")
+          )
+
+# Adding columns
+Denmark_LRR_result$Parameter <- as.factor(rep(c("bac", "cren", "nirk", "nirs", "noszi", "noszii", "aoa", "aob", "coma"), each = 3))
+
+Denmark_LRR_result$Treatment <- as.factor(rep(c("4 t/ha lime", "8 t/ha lime", "12 t/ha lime")))
+Denmark_LRR_result$Treatment <- factor(Denmark_LRR_result$Treatment, levels = c("4 t/ha lime", "8 t/ha lime", "12 t/ha lime"))
+Denmark_LRR_result$Country <- rep(c("Denmark"))
+
+# Removing not significant values
+Denmark_LRR_result_func <- Denmark_LRR_result %>%
+  filter(Est != 0)
+
+
+
+# LRR plot                      
+Denmark_LRR_result_plot_func <- ggplot(Denmark_LRR_result_func, aes(reorder(Parameter, -Est), y = Est, colour = Treatment)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + ylab("LRR 95% confident interval") + xlab("Parameter") +
+  theme_light() + scale_color_viridis_d() + # scale_color_wa_d("skagit") + 
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  ggtitle("Denmark")
+  
+
+Denmark_LRR_result_plot_func
+```
+
+```{r  LRR functional single plots, Ireland}
+
+Ireland_LRR <- function(x = Magge_joint_16S_metadata_filtered_gathered_func, y) {
+  bind_rows(LRR_MAGGE(x, "Ireland", "Lime (2011)", y), # Change country and treatment here
+            LRR_MAGGE(x, "Ireland", "Lime (2011, 2013)", y),
+            LRR_MAGGE(x, "Ireland", "Lime (2013)", y))
+}
+
+# Making a table with results of LRR
+Ireland_LRR_result <- bind_rows(
+          Ireland_LRR(y = "bac"),
+          Ireland_LRR(y = "cren"),
+          Ireland_LRR(y = "nirk"),
+          Ireland_LRR(y = "nirs"),
+          Ireland_LRR(y = "noszi"),
+          Ireland_LRR(y = "noszii"),
+          Ireland_LRR(y = "aoa"),
+          Ireland_LRR(y = "aob"),
+          Ireland_LRR(y = "coma")
+          )
+
+# Adding columns
+Ireland_LRR_result$Parameter <- as.factor(rep(c("bac", "cren", "nirk", "nirs", "noszi", "noszii", "aoa", "aob", "coma"), each = 3))
+
+
+Ireland_LRR_result$Treatment <- as.factor(rep(c("Lime (2011)", "Lime (2011, 2013)", "Lime (2013)")))
+Ireland_LRR_result$Treatment <- factor(Ireland_LRR_result$Treatment, levels = c("Lime (2011)", "Lime (2011, 2013)", "Lime (2013)"))
+Ireland_LRR_result$Country <- rep(c("Ireland"))
+Ireland_LRR_result_func <- Ireland_LRR_result %>%
+  filter(Est != 0)
+
+
+# LRR plot                      
+Ireland_LRR_result_plot_func <- ggplot(Ireland_LRR_result_func, aes(reorder(Parameter, -Est), y = Est, colour = Treatment)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + ylab("LRR 95% confident interval") + xlab("Parameter") +
+  theme_light() + scale_color_viridis_d() + # scale_color_wa_d("skagit") +
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  ggtitle("Ireland")
+  
+
+Ireland_LRR_result_plot_func
+```
+
+```{r single LRR plot Norway}
+
+Norway_LRR <- function(x = Magge_joint_16S_metadata_filtered_gathered, y) {
+  bind_rows(LRR_MAGGE(x, "Norway", "Dolomite", y), # Change country and treatment here
+            LRR_MAGGE(x, "Norway", "Larvikite", y),
+            LRR_MAGGE(x, "Norway", "Marble", y),
+            LRR_MAGGE(x, "Norway", "Norite", y),
+            LRR_MAGGE(x, "Norway", "Olivine", y))
+}
+
+# Making a table with results of LRR
+Norway_LRR_result <- bind_rows(
+          Norway_LRR(y = "bac"),
+          Norway_LRR(y = "cren"),
+          Norway_LRR(y = "nirk"),
+          Norway_LRR(y = "nirs"),
+          Norway_LRR(y = "noszi"),
+          Norway_LRR(y = "noszii"),
+          Norway_LRR(y = "aoa"),
+          Norway_LRR(y = "aob"),
+          Norway_LRR(y = "coma")
+          )
+
+# Adding columns
+Norway_LRR_result$Parameter <- as.factor(rep(c("bac", "cren", "nirk", "nirs", "noszi", "noszii", "aoa", "aob", "coma"), each = 5))
+
+
+Norway_LRR_result$Treatment <- as.factor(rep(c("Dolomite", "Larvikite", "Marble", "Norite", "Olivine")))
+Norway_LRR_result$Treatment <- factor(Norway_LRR_result$Treatment, levels = c("Dolomite", "Larvikite", "Marble", "Norite", "Olivine"))
+Norway_LRR_result$Country <- rep(c("Norway"))
+Norway_LRR_result_func <- Norway_LRR_result %>%
+  filter(Est != 0)
+
+
+# LRR plot                      
+Norway_LRR_result_plot_func <- ggplot(Norway_LRR_result_func, aes(reorder(Parameter, -Est), y = Est, colour = Treatment)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + ylab("LRR 95% confident interval") + xlab("Parameter") +
+  theme_light() + scale_color_viridis_d() + # scale_color_wa_d("skagit") +
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  ggtitle("Norway")
+  
+
+Norway_LRR_result_plot_func
+```
+
+```{r single LRR plots, Sweden B}
+
+Sweden_B_LRR <- function(x = Magge_joint_16S_metadata_filtered_gathered, y) {
+  bind_rows(LRR_MAGGE(x, "Sweden_B", "10 ton/ha lime", y), # Change country and treatment here
+            LRR_MAGGE(x, "Sweden_B", "20 ton /ha lime", y),
+            )
+}
+
+# Making a table with results of LRR
+Sweden_B_LRR_result <- bind_rows(
+          Sweden_B_LRR(y = "bac"),
+          Sweden_B_LRR(y = "cren"),
+          Sweden_B_LRR(y = "nirk"),
+          Sweden_B_LRR(y = "nirs"),
+          Sweden_B_LRR(y = "noszi"),
+          Sweden_B_LRR(y = "noszii"),
+          Sweden_B_LRR(y = "aoa"),
+          Sweden_B_LRR(y = "aob"),
+          Sweden_B_LRR(y = "coma")
+          )
+
+# Adding columns
+Sweden_B_LRR_result$Parameter <- as.factor(rep(c("bac", "cren", "nirk", "nirs", "noszi", "noszii", "aoa", "aob", "coma"), each = 2))
+
+
+Sweden_B_LRR_result$Treatment <- as.factor(rep(c("10 ton/ha lime", "20 ton/ha lime")))
+Sweden_B_LRR_result$Treatment <- factor(Sweden_B_LRR_result$Treatment, levels = c("10 ton/ha lime", "20 ton/ha lime"))
+Sweden_B_LRR_result$Country <- rep(c("Sweden_B"))
+Sweden_B_LRR_result_func <- Sweden_B_LRR_result %>%
+  filter(Est != 0)
+
+
+# LRR plot                      
+Sweden_B_LRR_result_plot_func <- ggplot(Sweden_B_LRR_result_func, aes(reorder(Parameter, -Est), y = Est, colour = Treatment)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + ylab("LRR 95% confident interval") + xlab("Parameter") +
+  theme_light() + scale_color_viridis_d() + # scale_color_wa_d("skagit") +
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  ggtitle("Sweden_B")
+  
+
+Sweden_B_LRR_result_plot_func
+```
+
+```{r single LRR plots, Sweden LH}
+
+Sweden_LH_LRR <- function(x = Magge_joint_16S_metadata_filtered_gathered, y) {
+  bind_rows(LRR_MAGGE(x, "Sweden_LH", "Mixed lime", y), # Change country and treatment here
+            LRR_MAGGE(x, "Sweden_LH", "Slaked lime", y),
+            LRR_MAGGE(x, "Sweden_LH", "Tunnel kiln slag", y)
+            )
+}
+
+# Making a table with results of LRR
+Sweden_LH_LRR_result <- bind_rows(
+          Sweden_LH_LRR(y = "bac"),
+          Sweden_LH_LRR(y = "cren"),
+          Sweden_LH_LRR(y = "nirk"),
+          Sweden_LH_LRR(y = "nirs"),
+          Sweden_LH_LRR(y = "noszi"),
+          Sweden_LH_LRR(y = "noszii"),
+          Sweden_LH_LRR(y = "aoa"),
+          Sweden_LH_LRR(y = "aob"),
+          Sweden_LH_LRR(y = "coma")
+          )
+
+# Adding columns
+Sweden_LH_LRR_result$Parameter <- as.factor(rep(c("bac", "cren", "nirk", "nirs", "noszi", "noszii", "aoa", "aob", "coma"), each = 3))
+
+
+Sweden_LH_LRR_result$Treatment <- as.factor(rep(c("Mixed lime", "Slaked lime", "Tunnel kiln slag")))
+Sweden_LH_LRR_result$Treatment <- factor(Sweden_LH_LRR_result$Treatment, levels = c("Mixed lime", "Slaked lime", "Tunnel kiln slag"))
+Sweden_LH_LRR_result$Country <- rep(c("Sweden_LH"))
+Sweden_LH_LRR_result_func <- Sweden_LH_LRR_result %>%
+  filter(Est != 0)
+
+
+# LRR plot                      
+Sweden_LH_LRR_result_plot_func <- ggplot(Sweden_LH_LRR_result_func, aes(reorder(Parameter, -Est), y = Est, colour = Treatment)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + ylab("LRR 95% confident interval") + xlab("Parameter") +
+  theme_light() + scale_color_viridis_d() + # scale_color_wa_d("skagit") + 
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  ggtitle("Sweden_LH")
+  
+
+Sweden_LH_LRR_result_plot_func
+```
+
+```{r treatments as pH, echo=FALSE,results='hide',fig.keep='all'}
+
+LRR_joint_table_func <- bind_rows(
+  Denmark_LRR_result_func,
+  Ireland_LRR_result_func,
+  Norway_LRR_result_func,
+  Sweden_B_LRR_result_func,
+  Sweden_LH_LRR_result_func
+)
+
+pH <- Magge_joint_16S_metadata_filtered_gathered %>%
+  filter(Parameter == "Soil_pH") %>%
+  select(Treatment, Country, Parameter, Measurement)
+
+pH_normalized <- left_join(LRR_joint_table_func, pH, by = "Treatment")
+
+# Determing pH scales
+pH_normalized <- pH_normalized %>%
+  mutate(pH_scale = ifelse(Measurement >= 4 & Measurement <= 5, "4-5",
+                    ifelse(Measurement >= 5 & Measurement <= 6, "5-6",
+                    ifelse(Measurement >= 6 & Measurement <= 7, "6-7",
+                    ifelse(Measurement >= 7 & Measurement <= 8, "7-8", NA))))) %>%
+  drop_na() %>%
+  filter(Est != 0)
+
+LRR_func_pH_plot_func <- ggplot(pH_normalized, aes(reorder(Parameter.x, -Est), y = Est, colour = pH_scale)) + 
+  geom_point(size = 2) + geom_linerange(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  coord_flip() + labs(y = "LRR 95% confident interval", x = "Parameter", color = "pH scale") +
+  theme_light() + scale_color_viridis_d() + #+ scale_color_wa_d("skagit")
+  geom_hline(yintercept = 0, linetype="dashed", color = "black") +
+  theme(
+    axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=14, angle = 45), 
+    axis.text.y = element_text(colour = "black", size = 14), 
+    axis.title.y = element_text(size = 14), 
+    strip.text.x = element_text(face = "bold", size = 14,colour = 'black'), 
+    strip.background = element_rect(colour = "black"),
+    legend.position = c(0.8, 0.2)) +
+  facet_wrap(.~Country.x)
+  #ggtitle("LRR plot for functional data based on soil pH after treatment") 
+
+LRR_func_pH_plot_func
+
+#ggsave("/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/Finals/Figs/summary_LRR_functional_plot.pdf",width=12,height=13,units ="in", device="pdf")
+```
+
