@@ -1,0 +1,886 @@
+---
+title: "Joint paper MAGGE-pH ITS"
+author: "Sergio"
+date: "6/24/2023"
+output: html_document
+---
+  
+Data analysis for joint paper combining functional, ITS and chemical data. 
+
+```{r global_options, echo=FALSE, results='hide'}
+library(knitr)
+knitr::opts_chunk$set(fig.width = 12, fig.height = 8, fig.align = 'center', results = 'hide', echo = FALSE, warning = FALSE, message = FALSE, cache = FALSE)
+```
+
+
+```{r load data}
+
+library("phyloseq")
+
+Magge_joint_ITS <- readRDS("C:/Users/bogda/Documents/PhD/MAGGE/Finals/MAGGE_new_ITS_physeq.rds")
+#
+#/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/ITS/MAGGE_new_ITS_physeq.rds
+#sample_data(Magge_joint_ITS)$Country_code <- substr(sample_data(Magge_joint_ITS)$Country, 1, 2)
+
+sample_data(Magge_joint_ITS)$Average_yearly_rainfall = gsub("na", "531.93", sample_data(Magge_joint_ITS)$Average_yearly_rainfall)
+
+sample_data(Magge_joint_ITS)$Average_yearly_rainfall <- as.numeric(sample_data(Magge_joint_ITS)$Average_yearly_rainfall)
+
+
+library(dplyr)
+library(stringr)
+library(microViz)
+
+
+# Removing numbers from strings
+replacement_string <- c("e1" = "e", "e2" = "e", "e3" = "e", "e4" = "e",
+                        "l1" = "l", "l2" = "l", "l3" = "l", "l4" = "l",
+                        "finely ground limestone" = "lime", "No lime" = "Control",
+                        "0 t/ha lime" = "Control")
+
+Magge_joint_ITS <- Magge_joint_ITS %>%
+  ps_mutate(Treatment = str_replace_all(Treatment, replacement_string))
+
+#Remove samples with missing data
+Magge_joint_ITS<-ps_drop_incomplete(Magge_joint_ITS, vars = 'Soil_pH', verbose = FALSE)
+Magge_joint_ITS_metadata<-data.frame(sample_data(Magge_joint_ITS))
+
+Magge_joint_ITS_metadata <- Magge_joint_16S_metadata %>%
+  mutate(Country_code = Country) %>%
+  mutate(Country_code = str_replace(Country_code, "France_LQ", "FR1")) %>%
+  mutate(Country_code = str_replace(Country_code, "France_TX", "FR2")) %>%
+  mutate(Country_code = str_replace(Country_code, "Denmark", "DK")) %>%
+  mutate(Country_code = str_replace(Country_code, "Finland", "FI")) %>%
+  mutate(Country_code = str_replace(Country_code, "Ireland", "IE")) %>%
+  mutate(Country_code = str_replace(Country_code, "New_Zealand", "NZ")) %>%
+  mutate(Country_code = str_replace(Country_code, "Norway", "NO")) %>%
+  mutate(Country_code = str_replace(Country_code, "Sweden_B", "SE1")) %>%
+  mutate(Country_code = str_replace(Country_code, "Sweden_LH", "SE2"))
+
+
+```
+
+Rarefaction curves to  determine subsampling level. 28000 reads chosen. All samples used for analysis. Data was then subsampled to only use control sites (no pH treatment/liming)
+
+```{r rarefaction}
+
+# Remove any samples with less than 100 sequences
+pruned <- prune_samples(sample_sums(Magge_joint_ITS) >= 100, Magge_joint_ITS)
+pruned
+
+library(ggplot2)
+library(ranacapa)
+
+# Calculate rarefaction curves, then plot and color by subsite
+p <- ggrare(pruned, step = 1000, color = "Country", se =
+              FALSE,parallel = TRUE)+
+  scale_y_log10() +
+  scale_x_continuous(limits = c(1, 170000))
+p
+
+
+p + facet_wrap(~Country)
+
+# Rarefy at 28k
+
+Magge_joint_ITS_rare <- rarefy_even_depth(Magge_joint_ITS, 28000, rngseed=TRUE)
+```
+
+NMDS ordinations based on ITS data
+ANOSIM and ADONIS results shown below done by Country and then pH, with an additional Mantel test for pH at the end.
+```{r Compare beta diversity, results='markup'}
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+NMDS_ITS.ord <- ordinate(Magge_joint_ITS_rare, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+NMDS_ITS.ord
+
+library(vegan)
+library(grid)
+
+stressplot(NMDS_ITS.ord)
+
+# Create label for stress value
+Stress_val = grobTree(textGrob("Stress = 0.17", x = 0.05,  y = 0.95, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+library(ggrepel)
+library(wacolors)
+
+options(ggrepel.max.overlaps = Inf)
+
+
+Magge_ITS_NMDS <- plot_ordination(Magge_joint_ITS_rare, NMDS_ITS.ord, type = "samples",color="Soil_pH")+
+  geom_text_repel(aes(label = Magge_joint_ITS_metadata$Country_code)) + 
+  scale_color_wa_c(wacolors$vantage, reverse=TRUE)+
+  geom_point(size = 1) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size =14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size=12), 
+        axis.text.y = element_text(colour = "black", size=12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())+
+  labs(color = "Soil pH")+
+  annotation_custom(Stress_val)+
+  theme_bw(base_size=12)
+
+
+
+Magge_ITS_NMDS
+
+
+
+# Stats by Country
+# ANOSIM
+Country_group = get_variable(Magge_joint_ITS_rare, "Country")
+Country_ano = anosim(phyloseq::distance(Magge_joint_ITS_rare, "bray"), Country_group)
+Country_ano$signif
+Country_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Magge_joint_ITS_rare), "data.frame")
+# Calculate your Bray distance matrix
+Country_ado = phyloseq::distance(Magge_joint_ITS_rare, "bray")
+# Perform your ADONIS test
+Country_ado_stats <- adonis2(Country_ado ~ Country, df_ado)
+
+# Check results
+Country_ado_stats
+
+
+# Stats by pH
+# ANOSIM
+pH_group = get_variable(Magge_joint_ITS_rare, "Soil_pH")
+pH_ano = anosim(phyloseq::distance(Magge_joint_ITS_rare, "bray"), pH_group)
+pH_ano$signif
+pH_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Magge_joint_ITS_rare), "data.frame")
+# Calculate your Bray distance matrix
+pH_ado = phyloseq::distance(Magge_joint_ITS_rare, "bray")
+# Perform your ADONIS test
+pH_ado_stats <- adonis2(pH_ado ~ Soil_pH, df_ado)
+
+# Check results
+pH_ado_stats
+
+# Mantel correlation
+### pH matrix
+ph.dist <- dist(df_ado$Soil_pH, method = "euclidean")
+dist.matrix <- as.matrix(ph.dist)
+
+### Mantel tests
+mantel(pH_ado, ph.dist, method = "spearman")
+
+```
+
+
+NMDS color based on rain
+
+```{r NMDS color based on rain, results='markup'}
+
+Magge_ITS_NMDS_rain <- plot_ordination(Magge_joint_ITS_rare, NMDS_ITS.ord, type = "samples",color="Average_yearly_rainfall")+
+  geom_text_repel(aes(label = Magge_joint_ITS_metadata$Country_code)) + 
+  scale_color_wa_c(wacolors$vantage, reverse=TRUE)+
+  geom_point(size = 1) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size =14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(colour = "black", size=12), 
+        axis.text.y = element_text(colour = "black", size=12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())+
+  labs(color = "Average yearly rainfall")+
+  annotation_custom(Stress_val)+
+  theme_bw(base_size=12)
+
+
+
+Magge_ITS_NMDS_rain
+
+
+# Stats by rain
+# ANOSIM
+rain_group = get_variable(Magge_joint_ITS_rare, "Average_yearly_rainfall")
+rain_ano = anosim(phyloseq::distance(Magge_joint_ITS_rare, "bray"), rain_group)
+rain_ano$signif
+rain_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Magge_joint_ITS_rare), "data.frame")
+# Calculate your Bray distance matrix
+rain_ado = phyloseq::distance(Magge_joint_ITS_rare, "bray")
+# Perform your ADONIS test
+rain_ado_stats <- adonis2(rain_ado ~ Average_yearly_rainfall, df_ado)
+
+# Check results
+rain_ado_stats
+
+# Mantel correlation
+### Rain matrix
+rain.dist <- dist(df_ado$Average_yearly_rainfall, method = "euclidean")
+dist.matrix <- as.matrix(rain.dist)
+
+### Mantel tests
+mantel(rain_ado, rain.dist, method = "spearman")
+```
+
+
+Stacked bar plot based on phylum (draft and clean version)
+
+```{r stack bar phylum}
+
+library(plyr)
+library(scales)
+
+# Clean graph and cluster by country
+
+library(dplyr)
+library(microViz)
+library(fantaxtic)
+library(speedyseq)
+library(phylosmith)
+
+Magge_joint_ITS_rare <- merge_treatments(Magge_joint_ITS_rare, c("Country", "Treatment"))
+
+MJITSR_clean <- name_na_taxa(Magge_joint_ITS_rare, na_label = "Unidentified <tax> (<rank>)")
+
+MJITSR_clean2 <- MJITSR_clean %>%
+  ps_select(Country, Treatment, Country_Treatment, Soil_pH) %>% # avoids lots of phyloseq::merge_samples warnings
+  merge_samples2(group = "Country_Treatment", funs = list()) %>%
+  tax_glom(taxrank = "Phylum")
+
+MJITSR_clean2 %>%
+  tax_filter(
+    tax_level = "Phylum", min_prevalence = 0.001,
+    prev_detection_threshold = 100
+  ) %>%
+  ps_mutate(
+    Treatment = factor(Treatment, levels = c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime','Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)','Dolomite', 'Larvikite', 'Marble','Norite','Olivine','10 ton/ha lime', '20 ton /ha lime','Slaked lime', 'Tunnel kiln slag', 'Mixed lime'))) %>%  
+  ps_mutate(
+    Country = factor(Country, levels = c('Denmark', 'Ireland', 'Finland', 'Norway', 'New_Zealand', 'France_LQ', 'Sweden_B', 'France_TX', 'Sweden_LH'))) %>%  
+  comp_barplot(
+    tax_level = "Phylum", n_taxa = 10,
+    bar_outline_colour = NA,
+    bar_width = 0.7,
+    taxon_renamer = toupper,
+    facet_by = "Country",
+    label = "Treatment",
+    x = "Treatment") + 
+  theme(legend.text = element_text(size = 12),
+        legend.title =element_text(size = 14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 10, vjust = 1, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())
+
+
+
+```
+
+Stacked bar plot based on Order (clean version)
+
+```{r stack bar Order}
+
+# Clean graph and cluster by country
+
+MJITSR_clean2_Order<-MJITSR_clean%>%
+  ps_select(Country, Treatment, Country_Treatment, Soil_pH) %>% # avoids lots of phyloseq::merge_samples warnings
+  merge_samples2(group = "Country_Treatment", funs = list())%>%
+  tax_glom(taxrank = "Order")
+
+MJITSR_clean2_Order %>%
+  tax_filter(
+    tax_level = "Order", min_prevalence = 0.001,
+    prev_detection_threshold = 100
+  ) %>%
+  ps_mutate(
+    Treatment = factor(Treatment, levels = c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime','Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)','Dolomite', 'Larvikite', 'Marble','Norite','Olivine','10 ton/ha lime', '20 ton /ha lime','Slaked lime', 'Tunnel kiln slag', 'Mixed lime'))) %>%  
+  ps_mutate(
+    Country = factor(Country, levels = c('Denmark', 'Ireland', 'Finland', 'Norway', 'New_Zealand', 'France_LQ', 'Sweden_B', 'France_TX', 'Sweden_LH'))) %>%  
+  comp_barplot(
+    tax_level = "Order", n_taxa = 15,
+    bar_outline_colour = NA,
+    bar_width = 0.7,
+    taxon_renamer = toupper,
+    facet_by = "Country",
+    label = "Treatment",
+    x = "Treatment"
+  ) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title = element_text(size =14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(angle=45, colour = "black", size=10, vjust = 1, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size=12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())
+
+```
+
+
+
+distance comparisons Ireland
+
+```{r distance comparisons Ireland}
+
+Magge_joint_ITS_rare_IR <- subset_samples(Magge_joint_ITS_rare, Country == "Ireland")
+Magge_joint_ITS_rare_IR
+
+Totu_table = t(otu_table(Magge_joint_ITS_rare_IR)) # transpose otu table
+otu_table(Magge_joint_ITS_rare_IR) = Totu_table
+
+p = Magge_joint_ITS_rare_IR
+m = "bray"
+s = "X.SampleID"
+d = "Treatment"   # Day
+
+# Calculate distances
+library(reshape2)
+library(reshape)
+library(dplyr)
+
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor, as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor, as.character) 
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Treatment")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Treatment2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums_its_ireland = wu.sd %>%
+  filter(Treatment == 'Control')%>%
+  mutate_if(is.factor,as.character) %>%
+  mutate(country = "Ireland")
+
+library(ggpubr)
+
+# Order factors
+wu.sd.sums_its_ireland$Treatment2 = factor(wu.sd.sums_its_ireland$Treatment2, levels = c('Control','Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)'))
+
+IR_ITS_dist_plot<-ggplot(wu.sd.sums_its_ireland, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_point() +
+  geom_boxplot() + ylab("Bray distance") +
+  theme(axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=18, angle = 45), axis.text.y = element_text(colour = "black", size = 18), axis.title.y = element_text(size = 18), 
+        strip.text.x = element_text(face = "bold", size = 18), 
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  stat_compare_means(method = "kruskal.test", size = 3,vjust = 30, aes(group = Treatment2))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control") + ylim(0, 1)+ggtitle("Ireland")
+
+IR_ITS_dist_plot
+
+
+```
+
+distance comparisons Norway
+```{r distance comparisons Norway}
+
+Magge_joint_ITS_rare_NO <- subset_samples(Magge_joint_ITS_rare, Country == "Norway")
+Magge_joint_ITS_rare_NO
+
+Totu_table =t(otu_table(Magge_joint_ITS_rare_NO)) #transpose otu table
+otu_table(Magge_joint_ITS_rare_NO)=Totu_table
+
+p = Magge_joint_ITS_rare_NO
+m = "bray"
+s = "X.SampleID"
+d = "Treatment"   
+
+# Calc distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor,as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor,as.character) 
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Treatment")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Treatment2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums_its_norway = wu.sd %>%
+  filter(Treatment == 'Control')%>%
+  mutate_if(is.factor,as.character) %>%
+  mutate(country = "Norway")
+
+
+# Order factors
+wu.sd.sums_its_norway$Treatment2 = factor(wu.sd.sums_its_norway$Treatment2, levels=c('Control','Dolomite', 'Larvikite', 'Marble','Norite','Olivine'))
+
+NO_ITS_dist_plot<-ggplot(wu.sd.sums_its_norway, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_point() +
+  geom_boxplot() + ylab("Bray distance") + xlab("Treatment") +
+  theme(axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=18, angle = 45), axis.text.y = element_text(colour = "black", size=18), axis.title.y = element_text(size=18), 
+        strip.text.x = element_text(face="bold", size=18), 
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  stat_compare_means(method = "kruskal.test", size=3,vjust = 30, aes(group = Treatment2))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ylim(0, 1)+ggtitle("Norway")
+NO_ITS_dist_plot
+
+
+```
+
+distance comparisons Denmark
+
+```{r distance comparisons Denmark}
+
+Magge_joint_ITS_rare_DE <- subset_samples(Magge_joint_ITS_rare, Country == "Denmark")
+Magge_joint_ITS_rare_DE
+
+Totu_table =t(otu_table(Magge_joint_ITS_rare_DE)) #transpose otu table
+otu_table(Magge_joint_ITS_rare_DE)=Totu_table
+
+p = Magge_joint_ITS_rare_DE
+m = "bray"
+s = "X.SampleID"
+d = "Treatment"   
+
+# Calculating distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+# Removing self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor,as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor,as.character) 
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Treatment")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Treatment2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums_its_denmark = wu.sd %>%
+  filter(Treatment == 'Control')%>%
+  mutate_if(is.factor,as.character) %>%
+  mutate(country = "Denmark")
+
+
+# Order factors
+wu.sd.sums_its_denmark$Treatment2 = factor(wu.sd.sums_its_denmark$Treatment2, levels=c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime'))
+
+
+DE_ITS_dist_plot<-ggplot(wu.sd.sums_its_denmark, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_point() +
+  geom_boxplot() + ylab("Bray distance") + xlab("Treatment") +
+  theme(axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=18, angle = 45), axis.text.y = element_text(colour = "black", size=18), axis.title.y = element_text(size=18), 
+        strip.text.x = element_text(face="bold", size=18), 
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  stat_compare_means(method = "kruskal.test", size=3,vjust = 30, aes(group = Treatment2))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ylim(0, 1)+ggtitle("Denmark")
+
+DE_ITS_dist_plot
+
+```
+
+
+distance comparisons Sweden_LH
+
+```{r distance comparisons Sweden_LH}
+
+Magge_joint_ITS_rare_SWLH <- subset_samples(Magge_joint_ITS_rare, Country == "Sweden_LH")
+Magge_joint_ITS_rare_SWLH
+
+Totu_table =t(otu_table(Magge_joint_ITS_rare_SWLH)) #transpose otu table
+otu_table(Magge_joint_ITS_rare_SWLH)=Totu_table
+
+p = Magge_joint_ITS_rare_SWLH
+m = "bray"
+s = "X.SampleID"
+d = "Treatment"   
+
+# Calculate distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor,as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor,as.character) 
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Treatment")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Treatment2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums_its_swedenlh = wu.sd %>%
+  filter(Treatment == 'Control')%>%
+  mutate_if(is.factor,as.character) %>%
+  mutate(country = "Sweden_LH")
+
+
+
+
+SWLH_ITS_dist_plot<-ggplot(wu.sd.sums_its_swedenlh, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_point() +
+  geom_boxplot() + ylab("Bray distance") + xlab("Treatment") +
+  theme(axis.text.x = element_text(colour = "black", vjust = 1, hjust = 1, size=18, angle = 45), axis.text.y = element_text(colour = "black", size=18), axis.title.y = element_text(size=18), 
+        strip.text.x = element_text(face="bold", size=18), 
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  stat_compare_means(method = "kruskal.test", size=3,vjust = 30,  aes(group = Treatment2))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ylim(0, 1)+ggtitle("Sweden_LH")
+
+SWLH_ITS_dist_plot
+
+```
+
+
+distance comparisons Sweden_B
+
+```{r distance comparisons Sweden_B}
+Magge_joint_ITS_rare_SWB <- subset_samples(Magge_joint_ITS_rare, Country == "Sweden_B")
+Magge_joint_ITS_rare_SWB
+
+Totu_table =t(otu_table(Magge_joint_ITS_rare_SWB)) #transpose otu table
+otu_table(Magge_joint_ITS_rare_SWB)=Totu_table
+
+p = Magge_joint_ITS_rare_SWB
+m = "bray"
+s = "X.SampleID"
+d = "Treatment"   
+
+# Calculate distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor,as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor,as.character) 
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Treatment")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Treatment2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums_its_swedenb = wu.sd %>%
+  filter(Treatment == 'Control')%>%
+  mutate_if(is.factor,as.character) %>%
+  mutate(country = "Sweden_B")
+
+
+# Order factors
+wu.sd.sums_its_swedenb$Treatment2 = factor(wu.sd.sums_its_swedenb$Treatment2, levels=c('Control','10 ton/ha lime', '20 ton /ha lime'))
+
+SWB_ITS_dist_plot<-ggplot(wu.sd.sums_its_swedenb, aes(x = Treatment2, y = value)) +
+  theme_bw() +
+  geom_point() +
+  geom_boxplot() + ylab("Bray distance") + xlab("Treatment") +
+  theme(axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=18, angle = 45), axis.text.y = element_text(colour = "black", size=18), axis.title.y = element_text(size=18), 
+        strip.text.x = element_text(face="bold", size=18), 
+        strip.background = element_rect(colour = "black", fill = "white")) +
+  stat_compare_means(method = "kruskal.test", size=3,vjust = 30,  aes(group = Treatment2))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ylim(0, 1)+ggtitle("Sweden_B")
+
+SWB_ITS_dist_plot
+
+```
+
+
+```{r Find significantly affected Phyla using rstatix}
+
+#no hits after p adjusted so used just p value
+Magge_joint_ITS_rare_DE_df<-Magge_joint_ITS_rare_DE %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+#how does this community look?
+d<- ggplot(Magge_joint_ITS_rare_DE_df,aes(x=Treatment,y=Abundance,fill=Phylum))+ 
+  geom_bar(stat="identity",position="fill") +
+  scale_y_continuous()+
+  ylab("Relative Abundance")
+d
+
+library(rstatix)
+# do tests
+KW_taxa_ITS_DE<-Magge_joint_ITS_rare_DE_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Denmark")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_ITS_DE<-Magge_joint_ITS_rare_DE_df %>% 
+  filter(OTU %in% KW_taxa_ITS_DE$OTU) 
+
+
+only_sig_taxa_ITS_DE$Treatment = factor(only_sig_taxa_ITS_DE$Treatment, levels=c('Control','4 t/ha lime', '8 t/ha lime', '12 t/ha lime'))
+
+# plot
+DE_sig_tax_plot_ITS<-ggplot(only_sig_taxa_ITS_DE, aes(x=Treatment, y=Abundance, fill=Phylum)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ggtitle("Denmark")
+
+DE_sig_tax_plot_ITS
+
+
+
+
+#Ireland
+#no hits after p adjusted so used just p value
+Magge_joint_ITS_rare_IR_df<-Magge_joint_ITS_rare_IR %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_ITS_IR<-Magge_joint_ITS_rare_IR_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Ireland")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_ITS_IR<-Magge_joint_ITS_rare_IR_df %>% 
+  filter(OTU %in% KW_taxa_ITS_IR$OTU) 
+
+
+only_sig_taxa_ITS_IR$Treatment = factor(only_sig_taxa_ITS_IR$Treatment, levels = c('Control','Lime (2011)', 'Lime (2011, 2013)', 'Lime (2013)'))
+
+# plot
+IR_sig_tax_plot_ITS<-ggplot(only_sig_taxa_ITS_IR, aes(x=Treatment, y=Abundance, fill=Phylum)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "Control")+ggtitle("Ireland")
+
+IR_sig_tax_plot_ITS
+
+
+
+
+#Sweden LH
+#no hits after p adjusted so used just p value
+Magge_joint_ITS_rare_SWLH_df<-Magge_joint_ITS_rare_SWLH %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_ITS_SWLH<-Magge_joint_ITS_rare_SWLH_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Sweden_LH")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_ITS_SWLH<-Magge_joint_ITS_rare_SWLH_df %>% 
+  filter(OTU %in% KW_taxa_ITS_SWLH$OTU) 
+
+
+only_sig_taxa_ITS_SWLH$Treatment = factor(only_sig_taxa_ITS_SWLH$Treatment, levels=c('Control','Mixed lime', 'Slaked lime', 'Tunnel kiln slag'))
+
+# plot
+SWLH_sig_tax_plot_ITS<-ggplot(only_sig_taxa_ITS_SWLH, aes(x=Treatment, y=Abundance, fill=Phylum, group=Treatment)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = 'Control')+ggtitle("Sweden LH")
+
+SWLH_sig_tax_plot_ITS
+
+
+
+#no hits after p adjusted so used just p value
+Magge_joint_ITS_rare_SWB_df<-Magge_joint_ITS_rare_SWB %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_ITS_SWB<-Magge_joint_ITS_rare_SWB_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Sweden_B")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_ITS_SWB<-Magge_joint_ITS_rare_SWB_df %>% 
+  filter(OTU %in% KW_taxa_ITS_SWB$OTU) 
+
+
+only_sig_taxa_ITS_SWB$Treatment = factor(only_sig_taxa_ITS_SWB$Treatment, levels=c('Control','10 ton/ha lime', '20 ton /ha lime'))
+
+# plot
+SWB_sig_tax_plot_ITS<-ggplot(only_sig_taxa_ITS_SWB, aes(x=Treatment, y=Abundance, fill=Phylum, group=Treatment)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = 'Control')+ggtitle("Sweden LH")
+
+SWB_sig_tax_plot_ITS
+
+
+
+#no hits after p adjusted so used just p value
+Magge_joint_ITS_rare_NO_df<-Magge_joint_ITS_rare_NO %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+
+# do tests
+KW_taxa_ITS_NO<-Magge_joint_ITS_rare_NO_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Treatment) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05) %>%
+  mutate(Country = "Norway")
+
+
+
+# make a list of the significant genera
+only_sig_taxa_ITS_NO<-Magge_joint_ITS_rare_NO_df %>% 
+  filter(OTU %in% KW_taxa_ITS_NO$OTU) 
+
+
+only_sig_taxa_ITS_NO$Treatment = factor(only_sig_taxa_ITS_NO$Treatment, levels=c('Control','Dolomite', 'Larvikite', 'Marble','Norite','Olivine'))
+
+# plot
+NO_sig_tax_plot_ITS<-ggplot(only_sig_taxa_ITS_NO, aes(x=Treatment, y=Abundance, fill=Phylum, group=Treatment)) + 
+  geom_boxplot() + 
+  facet_wrap(Phylum~Class,scales="free_y")+
+  theme(
+    axis.text.x=element_text(colour = "black", vjust = 1, hjust = 1, size=12, angle = 45), 
+    axis.text.y = element_text(colour = "black", size=12), 
+    axis.title.y = element_text(size=12),
+    strip.text.x = element_text(size=10), 
+    strip.background = element_rect(colour = "black", fill = "white"))+
+  stat_compare_means(method = "kruskal.test", paired = FALSE)+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = 'Control')+ggtitle("Norway")
+
+NO_sig_tax_plot_ITS
+
+
+
+
+# Combined table for taxa
+KW_taxa_ITS_all <- bind_rows(KW_taxa_ITS_DE, KW_taxa_ITS_IR, KW_taxa_ITS_SWB, KW_taxa_ITS_SWLH,KW_taxa_ITS_NO)
+KW_taxa_ITS_all <- KW_taxa_ITS_all %>%
+  select(-.y., -n, -df) %>%
+  arrange(desc(p))
+
+KW_taxa_ITS_all
+
+```
+
