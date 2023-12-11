@@ -1,0 +1,38 @@
+library("phyloseq")
+
+Magge_joint_ITS <- readRDS("path/MAGGE_new_ITS_physeq.rds")
+
+sample_data(Magge_joint_ITS)$Average_yearly_rainfall = gsub("na", "531.93", sample_data(Magge_joint_ITS)$Average_yearly_rainfall)
+
+sample_data(Magge_joint_ITS)$Average_yearly_rainfall <- as.numeric(sample_data(Magge_joint_ITS)$Average_yearly_rainfall)
+
+
+library(dplyr)
+library(stringr)
+library(microViz)
+
+
+# Removing numbers from strings
+replacement_string <- c("e1" = "e", "e2" = "e", "e3" = "e", "e4" = "e",
+                        "l1" = "l", "l2" = "l", "l3" = "l", "l4" = "l",
+                        "finely ground limestone" = "lime", "No lime" = "Control",
+                        "0 t/ha lime" = "Control")
+
+Magge_joint_ITS <- Magge_joint_ITS %>%
+  ps_mutate(Treatment = str_replace_all(Treatment, replacement_string))
+
+#Remove samples with missing data
+Magge_joint_ITS<-ps_drop_incomplete(Magge_joint_ITS, vars = 'Soil_pH', verbose = FALSE)
+Magge_joint_ITS_metadata<-data.frame(sample_data(Magge_joint_ITS))
+
+Magge_joint_ITS_metadata <- Magge_joint_16S_metadata %>%
+  mutate(Country_code = Country) %>%
+  mutate(Country_code = str_replace(Country_code, "France_LQ", "FR1")) %>%
+  mutate(Country_code = str_replace(Country_code, "France_TX", "FR2")) %>%
+  mutate(Country_code = str_replace(Country_code, "Denmark", "DK")) %>%
+  mutate(Country_code = str_replace(Country_code, "Finland", "FI")) %>%
+  mutate(Country_code = str_replace(Country_code, "Ireland", "IE")) %>%
+  mutate(Country_code = str_replace(Country_code, "New_Zealand", "NZ")) %>%
+  mutate(Country_code = str_replace(Country_code, "Norway", "NO")) %>%
+  mutate(Country_code = str_replace(Country_code, "Sweden_B", "SE1")) %>%
+  mutate(Country_code = str_replace(Country_code, "Sweden_LH", "SE2"))
