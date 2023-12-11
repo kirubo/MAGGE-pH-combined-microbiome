@@ -1,0 +1,20 @@
+# Remove any samples with less than 100 sequences
+pruned <- prune_samples(sample_sums(Magge_joint_ITS) >= 100, Magge_joint_ITS)
+pruned
+
+library(ggplot2)
+library(ranacapa)
+
+# Calculate rarefaction curves, then plot and color by subsite
+p <- ggrare(pruned, step = 1000, color = "Country", se =
+              FALSE,parallel = TRUE)+
+  scale_y_log10() +
+  scale_x_continuous(limits = c(1, 170000))
+p
+
+
+p + facet_wrap(~Country)
+
+# Rarefy at 28k
+
+Magge_joint_ITS_rare <- rarefy_even_depth(Magge_joint_ITS, 28000, rngseed=TRUE)
