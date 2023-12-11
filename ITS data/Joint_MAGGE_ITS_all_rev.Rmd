@@ -1,7 +1,7 @@
 ---
 title: "Joint paper MAGGE-pH ITS"
-author: "Sergio"
-date: "6/24/2023"
+author: ""
+date: ""
 output: html_document
 ---
   
@@ -17,10 +17,7 @@ knitr::opts_chunk$set(fig.width = 12, fig.height = 8, fig.align = 'center', resu
 
 library("phyloseq")
 
-Magge_joint_ITS <- readRDS("C:/Users/bogda/Documents/PhD/MAGGE/Finals/MAGGE_new_ITS_physeq.rds")
-#
-#/Volumes/micro-shared$/MoralesLab/Manuscripts/Magge-pH combined microbiome/ITS/MAGGE_new_ITS_physeq.rds
-#sample_data(Magge_joint_ITS)$Country_code <- substr(sample_data(Magge_joint_ITS)$Country, 1, 2)
+Magge_joint_ITS <- readRDS("path/MAGGE_new_ITS_physeq.rds")
 
 sample_data(Magge_joint_ITS)$Average_yearly_rainfall = gsub("na", "531.93", sample_data(Magge_joint_ITS)$Average_yearly_rainfall)
 
@@ -202,8 +199,6 @@ Magge_ITS_NMDS_rain <- plot_ordination(Magge_joint_ITS_rare, NMDS_ITS.ord, type 
   labs(color = "Average yearly rainfall")+
   annotation_custom(Stress_val)+
   theme_bw(base_size=12)
-
-
 
 Magge_ITS_NMDS_rain
 
